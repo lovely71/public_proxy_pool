@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -15,7 +15,6 @@ RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 COPY --from=builder /out/proxypool /app/proxypool
-COPY ./参考代理池抓取 /app/参考代理池抓取
 
 ENV HTTP_ADDR=":8080"
 ENV SQLITE_PATH="/data/proxypool.db"
@@ -24,4 +23,3 @@ VOLUME ["/data"]
 EXPOSE 8080
 
 ENTRYPOINT ["/app/proxypool"]
-
