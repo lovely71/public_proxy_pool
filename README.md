@@ -115,6 +115,12 @@ API_KEYS=your-token
 HTTP_ADDR=:8080
 ```
 
+默认推荐直接使用已经发布的公共镜像：
+
+```text
+ghcr.io/lovely71/public_proxy_pool:latest
+```
+
 如果你要暴露成不常用端口，直接改 compose 的端口映射，例如：
 
 ```yaml
@@ -123,6 +129,33 @@ ports:
 ```
 
 2. 启动容器
+
+如果 `docker-compose.yml` 使用公共镜像：
+
+```yaml
+services:
+  proxypool:
+    image: ghcr.io/lovely71/public_proxy_pool:latest
+    container_name: proxypool
+    restart: unless-stopped
+    ports:
+      - "38482:8080"
+    environment:
+      - API_KEYS=${API_KEYS}
+      - AUTO_FETCH_ENABLED=true
+      - AUTO_VALIDATE_ENABLED=true
+    volumes:
+      - ./data:/data
+```
+
+先拉镜像，再启动：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+如果你想在本地基于源码重新构建，再使用：
 
 ```bash
 docker compose up -d --build
@@ -167,22 +200,30 @@ curl -H 'X-API-Key: your-token' 'http://127.0.0.1:38482/api/v1/stats'
 - 推送 `v*` 标签时构建并打版本标签
 - `pull_request -> main` 时仅构建校验，不推送
 
-镜像默认推送到：
+镜像当前默认推送到：
 
 ```text
-ghcr.io/<owner>/<repo>
+ghcr.io/lovely71/public_proxy_pool
+```
+
+常用标签建议：
+
+```text
+ghcr.io/lovely71/public_proxy_pool:latest
+ghcr.io/lovely71/public_proxy_pool:main
+ghcr.io/lovely71/public_proxy_pool:sha-<commit>
 ```
 
 如果你已经把仓库推到 GitHub，后续可以直接在服务器上拉镜像部署：
 
 ```bash
-docker pull ghcr.io/<owner>/<repo>:latest
+docker pull ghcr.io/lovely71/public_proxy_pool:latest
 docker run -d \
   --name proxypool \
   -p 38482:8080 \
   -e API_KEYS=your-token \
   -v $(pwd)/data:/data \
-  ghcr.io/<owner>/<repo>:latest
+  ghcr.io/lovely71/public_proxy_pool:latest
 ```
 
 ## 部署后检查清单
@@ -255,6 +296,13 @@ bash scripts/smoke.sh
 ```
 
 Docker 部署：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+源码重新构建 Docker：
 
 ```bash
 docker compose up -d --build
