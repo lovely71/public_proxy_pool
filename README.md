@@ -307,3 +307,67 @@ docker compose up -d
 ```bash
 docker compose up -d --build
 ```
+
+## Oracle Cloud Ubuntu 一键部署
+
+如果你是在一台全新的 Oracle Cloud Ubuntu 主机上部署，最省事的方式是直接跑仓库里的自动部署脚本。脚本会自动：
+
+- 安装 Docker 和 Docker Compose
+- 创建 `/opt/public_proxy_pool`
+- 生成 `.env` 和 `docker-compose.yml`
+- 拉取公共镜像 `ghcr.io/lovely71/public_proxy_pool:latest`
+- 以更适合小机的保守参数启动服务
+- 做健康检查并输出后台访问地址
+
+### 用法一：先把仓库传上服务器再执行
+
+```bash
+sudo bash scripts/deploy_oracle_ubuntu.sh
+```
+
+如果你想自定义端口或 token：
+
+```bash
+sudo HOST_PORT=38482 API_KEY='your-strong-token' PUBLIC_BASE_URL='http://YOUR_SERVER_IP:38482' \
+  bash scripts/deploy_oracle_ubuntu.sh
+```
+
+### 用法二：本地直接通过 SSH 远程执行
+
+```bash
+ssh ubuntu@YOUR_SERVER_IP 'sudo bash -s' < scripts/deploy_oracle_ubuntu.sh
+```
+
+带自定义参数的例子：
+
+```bash
+ssh ubuntu@YOUR_SERVER_IP \
+  "sudo env HOST_PORT=38482 API_KEY='your-strong-token' bash -s" \
+  < scripts/deploy_oracle_ubuntu.sh
+```
+
+部署完成后，脚本会输出：
+
+- 本机检查命令
+- API Token
+- Web 后台地址：`http://公网IP:端口/ui/overview?token=你的token`
+
+### Oracle Cloud 额外注意事项
+
+脚本只能处理主机内部环境，Oracle 云控制台里的网络策略还需要你手动放行：
+
+- 在实例所在子网的 `Security List` 或绑定的 `NSG` 中，放行入站 `TCP/你的端口`
+- 如果主机自己启用了 `ufw`，脚本会自动尝试放行该端口
+
+脚本默认使用轻量参数，适合小规格机器。如果你后面想调高抓取/验证并发，可以直接修改服务器上的：
+
+```text
+/opt/public_proxy_pool/.env
+```
+
+然后执行：
+
+```bash
+cd /opt/public_proxy_pool
+docker compose up -d
+```
