@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProxyPool · {{.Title}}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%230f6fff'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='30' font-family='Arial' fill='white'%3EP%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/ui/static/app.css" />
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="brand-mark">P</div>
+          <div class="brand-copy">
+            <div class="brand-title">ProxyPool</div>
+            <div class="brand-subtitle">公共代理聚合与质量监控后台</div>
+          </div>
+        </div>
+        <div class="nav">
+          <a href="/ui/overview?token={{.Token}}">概览</a>
+          <a href="/ui/sources?token={{.Token}}">抓取源</a>
+          <a class="active" href="/ui/nodes?verify=1&limit=200&token={{.Token}}">节点池</a>
+          <a href="/ui/sub?token={{.Token}}">订阅生成</a>
+          <a href="/ui/api?token={{.Token}}">使用帮助</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="hero">
+        <div class="hero-panel">
+          <div class="eyebrow">节点视图</div>
+          <h1>按国家、协议、纯净度和延迟筛选节点。</h1>
+          <p>
+            列表默认更偏向运营视角：你可以优先看 fresh 且有效的节点，也可以切到宽松模式查看候选池。
+            手机端会自动转成卡片式展示，避免横向滚动难看难用。
+          </p>
+          <div class="hero-actions">
+            <span class="chip info">总节点 {{.Stats.NodesTotal}}</span>
+            <span class="chip good">有效 {{.Stats.NodesValid}}</span>
+            <span class="chip warn">Fresh {{.Stats.NodesFreshOK}}</span>
+          </div>
+        </div>
+        <div class="mini-card">
+          <h3>筛选建议</h3>
+          <ul class="bullet-list">
+            <li><span class="helper-key">`verify=1`</span>只看最近检测且确认可用的节点，适合直接出口。</li>
+            <li><span class="helper-key">`fresh_within`</span>越短，节点越新鲜，但返回数量也可能更少。</li>
+            <li><span class="helper-key">`min_purity` + `countries`</span>组合使用时，更适合生成质量更稳定的订阅。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">筛选条件</h2>
+            <p class="section-desc">留空表示不过滤；所有参数都会原样参与订阅和 API 出口。</p>
+          </div>
+        </div>
+
+        <form method="get" action="/ui/nodes" class="stack">
+          <input type="hidden" name="token" value="{{.Token}}" />
+          <div class="field-grid compact">
+            <div class="field">
+              <label for="kind">节点类型</label>
+              <select id="kind" name="kind">
+                <option value="">全部</option>
+                <option value="proxy" {{if eq (index .Query "kind") "proxy"}}selected{{end}}>普通代理</option>
+                <option value="v2ray" {{if eq (index .Query "kind") "v2ray"}}selected{{end}}>V2Ray 系</option>
+              </select>
+            </div>
+            <div class="field span-2">
+              <label for="protocols">协议列表</label>
+              <input id="protocols" name="protocols" placeholder="例如 http,socks5,ss,vmess" value="{{index .Query "protocols"}}" />
+            </div>
+            <div class="field">
+              <label for="countries">国家</label>
+              <input id="countries" name="countries" placeholder="例如 US,JP,SG" value="{{index .Query "countries"}}" />
+            </div>
+            <div class="field">
+              <label for="min_purity">最低纯净度</label>
+              <input id="min_purity" name="min_purity" placeholder="0-100" value="{{index .Query "min_purity"}}" />
+            </div>
+            <div class="field">
+              <label for="max_latency_ms">最大延迟</label>
+              <input id="max_latency_ms" name="max_latency_ms" placeholder="毫秒" value="{{index .Query "max_latency_ms"}}" />
+            </div>
+            <div class="field">
+              <label for="fresh_within">检测新鲜度</label>
+              <input id="fresh_within" name="fresh_within" placeholder="例如 5m / 30m" value="{{index .Query "fresh_within"}}" />
+            </div>
+            <div class="field">
+              <label for="limit">返回数量</label>
+              <input id="limit" name="limit" placeholder="例如 200" value="{{index .Query "limit"}}" />
+            </div>
+            <div class="field">
+              <label for="verify">出口前校验</label>
+              <select id="verify" name="verify">
+                <option value="1" {{if eq (index .Query "verify") "1"}}selected{{end}}>开启</option>
+                <option value="0" {{if eq (index .Query "verify") "0"}}selected{{end}}>关闭</option>
+              </select>
+            </div>
+          </div>
+          <div class="button-row">
+            <button class="primary" type="submit">应用筛选</button>
+            <a class="btn btn-ghost" href="/ui/sub?token={{.Token}}">去生成订阅</a>
+          </div>
+        </form>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">节点列表</h2>
+            <p class="section-desc">支持在这里临时封禁或恢复节点，便于排除低质量出口。</p>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>类型</th>
+                <th>协议</th>
+                <th>地址</th>
+                <th>国家</th>
+                <th>ASN</th>
+                <th>延迟</th>
+                <th>纯净度</th>
+                <th>状态</th>
+                <th>评分</th>
+                <th>最后检测</th>
+                <th>节点信息</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range .Nodes}}
+              <tr>
+                <td class="mono" data-label="ID">{{.ID}}</td>
+                <td data-label="类型">{{if eq .Kind "proxy"}}普通代理{{else}}V2Ray 系{{end}}</td>
+                <td class="mono" data-label="协议">{{.Protocol}}</td>
+                <td class="mono" data-label="地址">{{.Host}}:{{.Port}}</td>
+                <td class="mono" data-label="国家">{{if .Country}}{{.Country}}{{else}}未识别{{end}}</td>
+                <td class="mono" data-label="ASN">{{if .ASN}}{{.ASN}}{{else}}未识别{{end}}</td>
+                <td class="mono" data-label="延迟">{{if gt .LatencyMS 0}}{{.LatencyMS}}ms{{else}}未检测{{end}}</td>
+                <td class="mono" data-label="纯净度">{{.PurityScore}}</td>
+                <td data-label="状态">
+                  {{if eq .Status "valid"}}
+                  <span class="pill ok">可用</span>
+                  {{else if eq .Status "invalid"}}
+                  <span class="pill bad">失效</span>
+                  {{else}}
+                  <span class="pill warn">待确认</span>
+                  {{end}}
+                </td>
+                <td class="mono" data-label="评分">{{printf "%.1f" .Score}}</td>
+                <td class="mono" data-label="最后检测">{{fmtUnix .LastCheckedAt}}</td>
+                <td class="mono" data-label="节点信息">{{printf "%.72s" .RawURI}}</td>
+                <td data-label="操作">
+                  <div class="table-actions">
+                    {{if gt .BanUntil 0}}
+                    <form method="post" action="/ui/nodes/{{.ID}}/unban?token={{$.Token}}">
+                      <button type="submit">解除封禁</button>
+                    </form>
+                    {{else}}
+                    <form method="post" action="/ui/nodes/{{.ID}}/ban?token={{$.Token}}">
+                      <button class="danger" type="submit">封禁 24 小时</button>
+                    </form>
+                    {{end}}
+                  </div>
+                </td>
+              </tr>
+              {{else}}
+              <tr>
+                <td colspan="13">
+                  <div class="empty-state">
+                    当前筛选条件下没有匹配节点。可以放宽 `verify`、`fresh_within` 或国家筛选后再试。
+                  </div>
+                </td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

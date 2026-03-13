@@ -1,0 +1,261 @@
+# public_proxy_pool
+
+一个基于 Go 的公共代理聚合服务，支持抓取、检测、评分、多格式订阅导出、中文 Web UI、Docker 部署，以及通过 GitHub Actions 自动构建 Docker 镜像。
+
+## 功能概览
+
+- 聚合公共代理源与订阅源，统一入库
+- 对节点做有效性、延迟、国家、纯净度等检测
+- 导出 `JSON`、`plain`、`Clash`、`V2Ray` 等格式
+- 内置中文 Web 管理后台，支持手机和桌面自适应
+- 支持 `SQLite`、Docker、GitHub Actions 构建镜像
+
+## 目录说明
+
+- `cmd/proxypool`：主程序入口
+- `internal/`：核心业务代码
+- `scripts/run_light.sh`：适合 `1c1g` 机器的轻量启动脚本
+- `docker-compose.yml`：容器部署示例
+- `.github/workflows/docker-image.yml`：GitHub Actions Docker 镜像构建流程
+
+## 配置准备
+
+推荐先复制环境变量模板：
+
+```bash
+cp .env.example .env
+```
+
+最少需要配置：
+
+```bash
+API_KEYS=replace-with-a-strong-token
+HTTP_ADDR=:38482
+SQLITE_PATH=./data/proxypool.db
+```
+
+说明：
+
+- `API_KEYS`：后台和 API 鉴权 token，可写多个，逗号分隔
+- `HTTP_ADDR`：监听端口，建议用不常用高位端口，例如 `:38482`
+- `SQLITE_PATH`：SQLite 数据文件路径
+- `.env` 已加入 `.gitignore`，不会被提交
+
+## 部署流程
+
+### 方案一：本机轻量部署
+
+适合单机、开发机、`1c1g` 云主机直接运行。
+
+1. 准备环境
+
+```bash
+go version
+```
+
+建议使用项目 `go.mod` 对应的 Go 版本。
+
+2. 配置 `.env`
+
+```bash
+cp .env.example .env
+```
+
+至少填写：
+
+```bash
+API_KEYS=your-token
+HTTP_ADDR=:38482
+SQLITE_PATH=./data/proxypool.db
+```
+
+3. 启动服务
+
+```bash
+./scripts/run_light.sh
+```
+
+这个脚本默认会：
+
+- 自动读取根目录 `.env`
+- 限制抓取和验证并发，适合小内存机器
+- 默认关闭高开销的 `NodeMaven` 和纯净度外部查询
+
+4. 验证服务
+
+```bash
+curl http://127.0.0.1:38482/healthz
+curl -H 'X-API-Key: your-token' 'http://127.0.0.1:38482/api/v1/stats'
+```
+
+5. 访问后台
+
+浏览器访问时要带 `token`：
+
+```text
+http://127.0.0.1:38482/ui/overview?token=your-token
+```
+
+原因是浏览器地址栏不会自动携带 `X-API-Key` 请求头。
+
+### 方案二：Docker Compose 部署
+
+适合服务器长期运行。
+
+1. 准备 `.env`
+
+```bash
+cp .env.example .env
+```
+
+建议最少配置：
+
+```bash
+API_KEYS=your-token
+HTTP_ADDR=:8080
+```
+
+如果你要暴露成不常用端口，直接改 compose 的端口映射，例如：
+
+```yaml
+ports:
+  - "38482:8080"
+```
+
+2. 启动容器
+
+```bash
+docker compose up -d --build
+```
+
+3. 查看日志
+
+```bash
+docker compose logs -f proxypool
+```
+
+4. 验证服务
+
+```bash
+curl http://127.0.0.1:38482/healthz
+curl -H 'X-API-Key: your-token' 'http://127.0.0.1:38482/api/v1/stats'
+```
+
+5. 数据目录
+
+默认数据挂载在：
+
+```text
+./data
+```
+
+如果你启用离线 GeoIP，也可以额外挂载：
+
+```text
+./geoip:/geoip:ro
+```
+
+### 方案三：使用 GitHub Actions 自动构建镜像
+
+仓库内置了：
+
+- [.github/workflows/docker-image.yml](.github/workflows/docker-image.yml)
+
+触发规则：
+
+- 推送到 `main` 时构建镜像
+- 推送 `v*` 标签时构建并打版本标签
+- `pull_request -> main` 时仅构建校验，不推送
+
+镜像默认推送到：
+
+```text
+ghcr.io/<owner>/<repo>
+```
+
+如果你已经把仓库推到 GitHub，后续可以直接在服务器上拉镜像部署：
+
+```bash
+docker pull ghcr.io/<owner>/<repo>:latest
+docker run -d \
+  --name proxypool \
+  -p 38482:8080 \
+  -e API_KEYS=your-token \
+  -v $(pwd)/data:/data \
+  ghcr.io/<owner>/<repo>:latest
+```
+
+## 部署后检查清单
+
+上线后建议按这个顺序检查：
+
+1. 健康检查是否正常
+
+```bash
+curl http://127.0.0.1:38482/healthz
+curl http://127.0.0.1:38482/readyz
+```
+
+2. 鉴权是否生效
+
+```bash
+curl -i http://127.0.0.1:38482/api/v1/stats
+curl -i -H 'X-API-Key: your-token' http://127.0.0.1:38482/api/v1/stats
+```
+
+3. 后台是否可访问
+
+```text
+http://127.0.0.1:38482/ui/overview?token=your-token
+```
+
+4. 订阅是否能返回内容
+
+```bash
+curl -H 'X-API-Key: your-token' 'http://127.0.0.1:38482/sub/clash?verify=1&limit=10'
+curl -H 'X-API-Key: your-token' 'http://127.0.0.1:38482/sub/v2ray?verify=1&limit=10'
+```
+
+## 常用环境变量
+
+- `HTTP_ADDR`：监听地址，例如 `:38482`
+- `SQLITE_PATH`：SQLite 文件路径
+- `API_KEYS`：鉴权 token，多个值用逗号分隔
+- `PUBLIC_BASE_URL`：用于 `/probe/echo` 与匿名度检测
+- `AUTO_FETCH_ENABLED`：是否自动抓取
+- `AUTO_VALIDATE_ENABLED`：是否自动检测
+- `GEOIP_COUNTRY_MMDB`：国家 GeoIP 数据库路径
+- `GEOIP_ASN_MMDB`：ASN GeoIP 数据库路径
+- `V2RAY_VALIDATE_MODE`：`tcp` 或 `sing-box`
+- `SING_BOX_PATH`：`sing-box` 可执行文件路径
+
+完整变量可参考：
+
+- [.env.example](.env.example)
+- [internal/config/config.go](internal/config/config.go)
+
+## 常用命令
+
+本机运行：
+
+```bash
+./scripts/run_light.sh
+```
+
+测试：
+
+```bash
+go test ./...
+```
+
+接口烟测：
+
+```bash
+bash scripts/smoke.sh
+```
+
+Docker 部署：
+
+```bash
+docker compose up -d --build
+```

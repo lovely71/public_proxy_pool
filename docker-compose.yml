@@ -1,0 +1,22 @@
+services:
+  proxypool:
+    build: .
+    container_name: proxypool
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - API_KEYS=${API_KEYS:-changeme}
+      - AUTO_FETCH_ENABLED=true
+      - AUTO_VALIDATE_ENABLED=true
+      # Optional: offline GeoIP enrichment (mount mmdb files)
+      # - GEOIP_COUNTRY_MMDB=/geoip/GeoLite2-Country.mmdb
+      # - GEOIP_ASN_MMDB=/geoip/GeoLite2-ASN.mmdb
+      # Optional: v2ray real validation (need sing-box in PATH)
+      # - V2RAY_VALIDATE_MODE=sing-box
+      # If you want proxy anonymity detection via /probe/echo, set PUBLIC_BASE_URL to a reachable URL.
+      # - PUBLIC_BASE_URL=http://YOUR_SERVER_IP:8080
+    volumes:
+      - ./data:/data
+      # - ./geoip:/geoip:ro
+      # - ./bin/sing-box:/usr/local/bin/sing-box:ro

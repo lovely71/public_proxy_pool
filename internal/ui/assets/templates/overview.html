@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProxyPool · {{.Title}}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%230f6fff'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='30' font-family='Arial' fill='white'%3EP%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/ui/static/app.css" />
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="brand-mark">P</div>
+          <div class="brand-copy">
+            <div class="brand-title">ProxyPool</div>
+            <div class="brand-subtitle">公共代理聚合与质量监控后台</div>
+          </div>
+        </div>
+        <div class="nav">
+          <a class="active" href="/ui/overview?token={{.Token}}">概览</a>
+          <a href="/ui/sources?token={{.Token}}">抓取源</a>
+          <a href="/ui/nodes?verify=1&limit=200&token={{.Token}}">节点池</a>
+          <a href="/ui/sub?token={{.Token}}">订阅生成</a>
+          <a href="/ui/api?token={{.Token}}">使用帮助</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="hero">
+        <div class="hero-panel">
+          <div class="eyebrow">运行概览</div>
+          <h1>代理池状态一眼看清，订阅和接口直接可用。</h1>
+          <p>
+            这里会持续展示抓取源规模、有效节点数量和实时 fresh 池状态。页面默认围绕 1c1g
+            场景做信息压缩，在手机、平板和桌面上都能顺畅查看。
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="/ui/nodes?verify=1&limit=200&token={{.Token}}">查看有效节点</a>
+            <a class="btn btn-ghost" href="/ui/sub?token={{.Token}}">生成订阅链接</a>
+            <a class="btn" href="/ui/api?token={{.Token}}">查看中文帮助</a>
+          </div>
+        </div>
+
+        <div class="hero-side">
+          <div class="mini-card">
+            <h3>当前访问信息</h3>
+            <div class="kv-list">
+              <div class="kv">
+                <div class="k">鉴权状态</div>
+                <div class="v">{{if .APIKeysOn}}已启用{{else}}未启用{{end}}</div>
+              </div>
+              <div class="kv">
+                <div class="k">对外地址</div>
+                <div class="v">{{if .BaseURL}}{{.BaseURL}}{{else}}未配置{{end}}</div>
+              </div>
+              <div class="kv">
+                <div class="k">当前时间</div>
+                <div class="v">{{.Now.Format "2006-01-02 15:04:05"}}</div>
+              </div>
+            </div>
+          </div>
+          <div class="mini-card">
+            <h3>快速提醒</h3>
+            <ul class="bullet-list">
+              <li><span class="helper-key">浏览器打开后台</span>请把 token 放到地址栏，例如 `?token=...`。</li>
+              <li><span class="helper-key">脚本访问 API</span>推荐用 `X-API-Key` 请求头，便于自动化调用。</li>
+              <li><span class="helper-key">订阅默认行为</span>`verify=1` 只返回最近检测且有效的节点。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">节点总数</div>
+          <div class="stat-value">{{.Stats.NodesTotal}}</div>
+          <div class="stat-note">已入库并去重后的全部节点。</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">有效节点</div>
+          <div class="stat-value">{{.Stats.NodesValid}}</div>
+          <div class="stat-note">最近一次检测结果为可用。</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Fresh 有效池</div>
+          <div class="stat-value">{{.Stats.NodesFreshOK}}</div>
+          <div class="stat-note">满足 fresh 窗口且状态有效，可直接出口。</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">失效节点</div>
+          <div class="stat-value">{{.Stats.NodesInvalid}}</div>
+          <div class="stat-note">最近检测失败，后续会按策略回查。</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">待确认节点</div>
+          <div class="stat-value">{{.Stats.NodesUnknown}}</div>
+          <div class="stat-note">已抓取但尚未完成有效性确认。</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">抓取源数量</div>
+          <div class="stat-value">{{.Stats.SourcesEnabled}} / {{.Stats.SourcesTotal}}</div>
+          <div class="stat-note">当前启用源 / 已登记源。</div>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="section-card">
+          <div class="section-head">
+            <div>
+              <h2 class="section-title">常用入口</h2>
+              <p class="section-desc">把常看的数据面板和常用出口放在一起，减少来回切换。</p>
+            </div>
+          </div>
+          <div class="link-grid">
+            <a class="link-card" href="/api/v1/nodes?verify=1&limit=20&token={{.Token}}">
+              <span class="link-title">JSON 节点列表</span>
+              <span class="link-desc">适合脚本或服务调用，支持国家、协议、延迟和纯净度筛选。</span>
+            </a>
+            <a class="link-card" href="/sub/plain?verify=1&limit=50&token={{.Token}}">
+              <span class="link-title">纯文本订阅</span>
+              <span class="link-desc">输出代理地址或 URI 行列表，适合快速导入和排查。</span>
+            </a>
+            <a class="link-card" href="/sub/clash?verify=1&limit=200&token={{.Token}}">
+              <span class="link-title">Clash 订阅</span>
+              <span class="link-desc">自动生成 YAML，可直接给 Clash 系列客户端使用。</span>
+            </a>
+            <a class="link-card" href="/sub/v2ray?verify=1&limit=200&token={{.Token}}">
+              <span class="link-title">V2Ray 订阅</span>
+              <span class="link-desc">输出 base64 订阅，适合 v2rayN、Nekobox 等客户端。</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-head">
+            <div>
+              <h2 class="section-title">实时状态</h2>
+              <p class="section-desc">SSE 会持续刷新关键数字，用来快速确认抓取和检测是否在推进。</p>
+            </div>
+          </div>
+          <div class="hint-box">
+            <div class="row">
+              <span class="chip info">实时监控</span>
+              <span class="live-value" id="live">等待数据流...</span>
+            </div>
+          </div>
+          <div style="height: 14px"></div>
+          <ul class="helper-list">
+            <li><span class="helper-key">如果 fresh 有效池偏少</span>优先检查抓取源质量、验证并发和出口网络是否正常。</li>
+            <li><span class="helper-key">如果节点总数很多但有效少</span>说明公共池质量一般，建议在“抓取源”页关闭低质量源。</li>
+            <li><span class="helper-key">如果 UI 想直接复制链接</span>去“订阅生成”页填筛选参数，系统会帮你拼完整 URL。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        const el = document.getElementById("live");
+        const token = "{{.Token}}";
+        const es = new EventSource("/ui/events?token=" + encodeURIComponent(token));
+        es.addEventListener("stats", (event) => {
+          try {
+            const stats = JSON.parse(event.data);
+            el.textContent =
+              "fresh 有效池 " +
+              stats.NodesFreshOK +
+              " | 有效 " +
+              stats.NodesValid +
+              " | 总节点 " +
+              stats.NodesTotal;
+          } catch (_) {}
+        });
+      })();
+    </script>
+  </body>
+</html>

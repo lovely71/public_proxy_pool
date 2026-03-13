@@ -1,0 +1,17 @@
+data/
+dist/
+.DS_Store
+*.log
+*.db
+*.db-wal
+*.db-shm
+.env
+.playwright-cli/
+output/
+coverage/
+tmp/
+*.tmp
+*.out
+*.test
+node_modules/
+vendor/

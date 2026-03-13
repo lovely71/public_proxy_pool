@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProxyPool · {{.Title}}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%230f6fff'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='30' font-family='Arial' fill='white'%3EP%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/ui/static/app.css" />
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="brand-mark">P</div>
+          <div class="brand-copy">
+            <div class="brand-title">ProxyPool</div>
+            <div class="brand-subtitle">公共代理聚合与质量监控后台</div>
+          </div>
+        </div>
+        <div class="nav">
+          <a href="/ui/overview?token={{.Token}}">概览</a>
+          <a class="active" href="/ui/sources?token={{.Token}}">抓取源</a>
+          <a href="/ui/nodes?verify=1&limit=200&token={{.Token}}">节点池</a>
+          <a href="/ui/sub?token={{.Token}}">订阅生成</a>
+          <a href="/ui/api?token={{.Token}}">使用帮助</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="hero">
+        <div class="hero-panel">
+          <div class="eyebrow">抓取源管理</div>
+          <h1>优先保留高质量源，低收益源及时退避或停用。</h1>
+          <p>
+            系统会根据抓取成功率、有效产出和平均评分做源级排序。这个页面适合做两件事：
+            一是人工启停抓取源，二是临时补充新的订阅或文本源。
+          </p>
+          <div class="hero-actions">
+            <span class="chip info">已登记 {{.Stats.SourcesTotal}}</span>
+            <span class="chip good">启用中 {{.Stats.SourcesEnabled}}</span>
+          </div>
+        </div>
+        <div class="mini-card">
+          <h3>维护建议</h3>
+          <ul class="bullet-list">
+            <li><span class="helper-key">高失败率</span>先看 `最近错误`，连续异常的源建议临时关闭。</li>
+            <li><span class="helper-key">低收益</span>如果 EMA 产出长期接近 0，可以减少它在 1c1g 上的资源占用。</li>
+            <li><span class="helper-key">临时排查</span>用“立即抓取”把 `next_fetch_at` 提前到现在，方便快速验证。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">新增抓取源</h2>
+            <p class="section-desc">支持 GitHub 原始文本、NodeMaven API、base64 订阅和 Clash YAML 订阅。</p>
+          </div>
+        </div>
+
+        <form method="post" action="/ui/sources/add?token={{.Token}}" class="stack">
+          <div class="field-grid">
+            <div class="field">
+              <label for="name">名称</label>
+              <input id="name" name="name" placeholder="例如 github-raw-http" />
+            </div>
+            <div class="field">
+              <label for="type">类型</label>
+              <select id="type" name="type">
+                <option value="github_raw_text">GitHub 原始文本</option>
+                <option value="nodemaven_api">NodeMaven API</option>
+                <option value="sub_base64">Base64 订阅</option>
+                <option value="clash_yaml">Clash YAML</option>
+              </select>
+            </div>
+            <div class="field span-2">
+              <label for="url">地址</label>
+              <input id="url" name="url" placeholder="填写完整 URL" />
+            </div>
+            <div class="field">
+              <label for="parser">解析器</label>
+              <input id="parser" name="parser" placeholder="留空默认 generic" />
+            </div>
+            <div class="field">
+              <label for="default_scheme">默认协议</label>
+              <input id="default_scheme" name="default_scheme" placeholder="例如 http / socks5" />
+            </div>
+          </div>
+          <div class="button-row">
+            <button class="primary" type="submit">添加抓取源</button>
+          </div>
+        </form>
+
+        <div style="height: 14px"></div>
+        <div class="hint-box">
+          默认已经从参考 `service.py` 导入一批 GitHub raw 源。这里更适合补充你自己的订阅地址，或者对已有源做启停管理。
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">源列表</h2>
+            <p class="section-desc">桌面端表格现在会固定在一个可滚动区域里，横向滚动条始终贴着列表底部。</p>
+          </div>
+        </div>
+
+        <div class="table-note">
+          <span>已压缩桌面行高，长文本会自动省略，鼠标悬停可看完整内容。</span>
+          <span>左右拖动底部滚动条可查看更多列。</span>
+        </div>
+
+        <div class="table-wrap table-pane">
+          <table class="table-dense">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>名称</th>
+                <th>类型</th>
+                <th>状态</th>
+                <th>抓取间隔</th>
+                <th>下次抓取</th>
+                <th>退避到</th>
+                <th>ETag</th>
+                <th>EMA 产出</th>
+                <th>EMA 评分</th>
+                <th>抓取成功/失败</th>
+                <th>最近错误</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range .Sources}}
+              <tr>
+                <td class="mono" data-label="ID">{{.ID}}</td>
+                <td class="mono cell-ellipsis" data-label="名称" title="{{.Name}}">{{.Name}}</td>
+                <td class="mono cell-ellipsis" data-label="类型" title="{{.Type}}">{{.Type}}</td>
+                <td data-label="状态">
+                  {{if .Enabled}}
+                  <span class="pill ok">启用</span>
+                  {{else}}
+                  <span class="pill bad">停用</span>
+                  {{end}}
+                </td>
+                <td class="mono" data-label="抓取间隔">{{.IntervalSec}} 秒</td>
+                <td class="mono" data-label="下次抓取">{{fmtUnix .NextFetchAt}}</td>
+                <td class="mono" data-label="退避到">{{fmtUnix .BackoffUntil}}</td>
+                <td class="mono cell-ellipsis" data-label="ETag" title="{{.ETag}}">{{if .ETag}}{{printf "%.28s" .ETag}}{{else}}未记录{{end}}</td>
+                <td class="mono" data-label="EMA 产出">{{printf "%.3f" .EMAYield}}</td>
+                <td class="mono" data-label="EMA 评分">{{printf "%.3f" .EMAAvgScore}}</td>
+                <td class="mono" data-label="抓取成功/失败">{{.FetchOKTotal}} / {{.FetchFailTotal}}</td>
+                <td class="mono cell-ellipsis wide" data-label="最近错误" title="{{.LastError}}">{{if .LastError}}{{printf "%.72s" .LastError}}{{else}}无{{end}}</td>
+                <td data-label="操作">
+                  <div class="table-actions">
+                    <form method="post" action="/ui/sources/{{.ID}}/toggle?token={{$.Token}}">
+                      <button type="submit">{{if .Enabled}}停用{{else}}启用{{end}}</button>
+                    </form>
+                    <form method="post" action="/ui/sources/{{.ID}}/fetch?token={{$.Token}}">
+                      <button class="primary" type="submit">立即抓取</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {{else}}
+              <tr>
+                <td colspan="13">
+                  <div class="empty-state">当前没有抓取源，请先在上方添加一个源。</div>
+                </td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

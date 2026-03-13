@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProxyPool · {{.Title}}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%230f6fff'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='30' font-family='Arial' fill='white'%3EP%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/ui/static/app.css" />
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="brand-mark">P</div>
+          <div class="brand-copy">
+            <div class="brand-title">ProxyPool</div>
+            <div class="brand-subtitle">公共代理聚合与质量监控后台</div>
+          </div>
+        </div>
+        <div class="nav">
+          <a href="/ui/overview?token={{.Token}}">概览</a>
+          <a href="/ui/sources?token={{.Token}}">抓取源</a>
+          <a href="/ui/nodes?verify=1&limit=200&token={{.Token}}">节点池</a>
+          <a class="active" href="/ui/sub?token={{.Token}}">订阅生成</a>
+          <a href="/ui/api?token={{.Token}}">使用帮助</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="hero">
+        <div class="hero-panel">
+          <div class="eyebrow">订阅生成器</div>
+          <h1>把筛选条件转成可直接复制的订阅和 API 链接。</h1>
+          <p>
+            这里适合做“出口前配置”：先挑格式，再选国家、协议、纯净度和延迟限制，最后一键复制完整链接。
+            生成结果默认会自动带上 token，适合客户端直接导入。
+          </p>
+        </div>
+        <div class="mini-card">
+          <h3>使用建议</h3>
+          <ul class="bullet-list">
+            <li><span class="helper-key">Clash 用户</span>优先选 `Clash YAML`，模板已默认带中国网络场景常用的 DNS、防污染和国内直连规则。</li>
+            <li><span class="helper-key">V2Ray 用户</span>选 `V2Ray 订阅`，系统会输出 base64 链接。</li>
+            <li><span class="helper-key">排查问题</span>先切到 `JSON 节点列表` 看实际返回内容，再决定订阅参数。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">生成参数</h2>
+            <p class="section-desc">这些筛选条件会直接参与最终链接，可重复复制给不同客户端。</p>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="field-grid compact">
+            <div class="field">
+              <label for="fmt">输出格式</label>
+              <select id="fmt">
+                <option value="/sub/plain">纯文本订阅</option>
+                <option value="/sub/clash">Clash YAML</option>
+                <option value="/sub/v2ray">V2Ray 订阅</option>
+                <option value="/api/v1/nodes">JSON 节点列表</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="kind">节点类型</label>
+              <select id="kind">
+                <option value="">全部</option>
+                <option value="proxy">普通代理</option>
+                <option value="v2ray">V2Ray 系</option>
+              </select>
+            </div>
+            <div class="field span-2">
+              <label for="protocols">协议列表</label>
+              <input id="protocols" placeholder="例如 http,socks5,ss,vmess,vless,trojan" value="http,socks5,ss,vmess,vless,trojan" />
+            </div>
+            <div class="field">
+              <label for="countries">国家列表</label>
+              <input id="countries" placeholder="例如 US,JP,SG" />
+            </div>
+            <div class="field">
+              <label for="minPurity">最低纯净度</label>
+              <input id="minPurity" placeholder="0-100" value="0" />
+            </div>
+            <div class="field">
+              <label for="maxLatency">最大延迟</label>
+              <input id="maxLatency" placeholder="毫秒" value="0" />
+            </div>
+            <div class="field">
+              <label for="limit">返回数量</label>
+              <input id="limit" placeholder="例如 200" value="200" />
+            </div>
+            <div class="field">
+              <label for="verify">出口前校验</label>
+              <select id="verify">
+                <option value="1">开启</option>
+                <option value="0">关闭</option>
+              </select>
+            </div>
+            <div class="field span-2">
+              <label for="token">Token</label>
+              <input id="token" placeholder="如果后台启用鉴权，这里需要填写 token" value="{{.Token}}" />
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button class="primary" id="gen">生成链接</button>
+            <button id="copy">复制完整链接</button>
+            <span class="muted" id="status"></span>
+          </div>
+
+          <pre><code id="out"></code></pre>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">参数理解</h2>
+            <p class="section-desc">为了让生成出来的链接更稳定，下面这些规则值得记一下。</p>
+          </div>
+        </div>
+        <div class="link-grid">
+          <div class="mini-card">
+            <h3>`verify=1`</h3>
+            <p>默认推荐开启。这样生成的订阅只会返回最近确认可用的节点，适合日常使用。</p>
+          </div>
+          <div class="mini-card">
+            <h3>`limit`</h3>
+            <p>订阅过大时客户端导入会变慢。一般 `50~300` 对多数客户端已经足够。</p>
+          </div>
+          <div class="mini-card">
+            <h3>`countries`</h3>
+            <p>如果你有特定地区需求，建议先按国家过滤，再叠加延迟和纯净度。</p>
+          </div>
+          <div class="mini-card">
+            <h3>`protocols`</h3>
+            <p>不同客户端支持的协议不同，不确定时先留默认，再在 JSON 模式检查结果。</p>
+          </div>
+          <div class="mini-card">
+            <h3>`Clash YAML`</h3>
+            <p>输出会附带自动选择、故障转移、地区分组，以及中国场景常用的 DNS 和直连分流规则。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        const get = (id) => document.getElementById(id);
+        const out = get("out");
+        const status = get("status");
+
+        function buildRelative() {
+          const params = new URLSearchParams();
+          const kind = get("kind").value.trim();
+          const protocols = get("protocols").value.trim();
+          const countries = get("countries").value.trim();
+          const minPurity = get("minPurity").value.trim();
+          const maxLatency = get("maxLatency").value.trim();
+          const limit = get("limit").value.trim();
+          const verify = get("verify").value;
+          const token = get("token").value.trim();
+
+          if (kind) params.set("kind", kind);
+          if (protocols) params.set("protocols", protocols);
+          if (countries) params.set("countries", countries);
+          if (minPurity) params.set("min_purity", minPurity);
+          if (maxLatency) params.set("max_latency_ms", maxLatency);
+          if (limit) params.set("limit", limit);
+          params.set("verify", verify);
+          if (token) params.set("token", token);
+
+          return get("fmt").value + "?" + params.toString();
+        }
+
+        function render() {
+          out.textContent = location.origin + buildRelative();
+        }
+
+        get("gen").addEventListener("click", function (event) {
+          event.preventDefault();
+          render();
+          status.textContent = "已生成";
+        });
+
+        get("copy").addEventListener("click", async function (event) {
+          event.preventDefault();
+          render();
+          try {
+            await navigator.clipboard.writeText(out.textContent);
+            status.textContent = "已复制到剪贴板";
+          } catch (_) {
+            status.textContent = "复制失败，请手动复制";
+          }
+        });
+
+        [
+          "fmt",
+          "kind",
+          "protocols",
+          "countries",
+          "minPurity",
+          "maxLatency",
+          "limit",
+          "verify",
+          "token"
+        ].forEach(function (id) {
+          get(id).addEventListener("input", render);
+          get(id).addEventListener("change", render);
+        });
+
+        render();
+      })();
+    </script>
+  </body>
+</html>

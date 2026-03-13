@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProxyPool · {{.Title}}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%230f6fff'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-size='30' font-family='Arial' fill='white'%3EP%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/ui/static/app.css" />
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="brand-mark">P</div>
+          <div class="brand-copy">
+            <div class="brand-title">ProxyPool</div>
+            <div class="brand-subtitle">公共代理聚合与质量监控后台</div>
+          </div>
+        </div>
+        <div class="nav">
+          <a href="/ui/overview?token={{.Token}}">概览</a>
+          <a href="/ui/sources?token={{.Token}}">抓取源</a>
+          <a href="/ui/nodes?verify=1&limit=200&token={{.Token}}">节点池</a>
+          <a href="/ui/sub?token={{.Token}}">订阅生成</a>
+          <a class="active" href="/ui/api?token={{.Token}}">使用帮助</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="hero">
+        <div class="hero-panel">
+          <div class="eyebrow">中文使用帮助</div>
+          <h1>把出口 API、订阅格式和常用参数一次看明白。</h1>
+          <p>
+            这页面向真实使用场景编排：先讲鉴权，再讲接口，再给你可以直接复制改造的调用示例。
+            如果你主要通过浏览器使用后台，记得把 token 放到 URL；如果你走脚本或客户端，优先用请求头。
+          </p>
+        </div>
+        <div class="mini-card">
+          <h3>推荐用法</h3>
+          <ul class="bullet-list">
+            <li><span class="helper-key">浏览器后台</span>访问 `/ui/...?...&token=你的token`。</li>
+            <li><span class="helper-key">脚本和服务</span>使用 `X-API-Key` 请求头，便于统一管理。</li>
+            <li><span class="helper-key">订阅链接</span>在“订阅生成”页先组合筛选条件，再复制完整 URL。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="section-card">
+          <div class="section-head">
+            <div>
+              <h2 class="section-title">鉴权说明</h2>
+              <p class="section-desc">两种方式都支持，按访问场景选就行。</p>
+            </div>
+          </div>
+          <pre><code>X-API-Key: {{if .Token}}{{.Token}}{{else}}&lt;你的token&gt;{{end}}
+
+或者
+
+?token={{if .Token}}{{.Token}}{{else}}&lt;你的token&gt;{{end}}
+
+说明：
+1. 浏览器打开 UI 时，地址栏不会自动带 X-API-Key。
+2. 所以 Web 后台、订阅链接更推荐用 ?token=...
+3. curl、脚本、程序调用更推荐用 X-API-Key 请求头。</code></pre>
+        </div>
+
+        <div class="section-card">
+          <div class="section-head">
+            <div>
+              <h2 class="section-title">常用接口</h2>
+              <p class="section-desc">健康检查和指标无需额外理解，出口接口重点看筛选参数。</p>
+            </div>
+          </div>
+          <ul class="helper-list">
+            <li><span class="helper-key">节点列表</span>`GET /api/v1/nodes` 返回 JSON 数组。</li>
+            <li><span class="helper-key">随机单节点</span>`GET /api/v1/nodes/random`。</li>
+            <li><span class="helper-key">纯文本订阅</span>`GET /sub/plain`。</li>
+            <li><span class="helper-key">Clash 订阅</span>`GET /sub/clash`。</li>
+            <li><span class="helper-key">V2Ray 订阅</span>`GET /sub/v2ray`。</li>
+            <li><span class="helper-key">监控接口</span>`GET /metrics`、`/healthz`、`/readyz`。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">通用筛选参数</h2>
+            <p class="section-desc">下面这些参数基本所有出口都支持，可自由组合。</p>
+          </div>
+        </div>
+        <div class="field-grid">
+          <div class="mini-card">
+            <h3>`countries`</h3>
+            <p>国家白名单，逗号分隔，例如 `US,JP,SG`。</p>
+          </div>
+          <div class="mini-card">
+            <h3>`protocols`</h3>
+            <p>协议列表，例如 `http,socks5,ss,vmess,vless,trojan`。</p>
+          </div>
+          <div class="mini-card">
+            <h3>`min_purity`</h3>
+            <p>最低纯净度，范围 `0..100`，数值越高筛选越严格。</p>
+          </div>
+          <div class="mini-card">
+            <h3>`max_latency_ms`</h3>
+            <p>限制最大延迟，适合控制出口体验和可用性。</p>
+          </div>
+          <div class="mini-card">
+            <h3>`fresh_within`</h3>
+            <p>只返回最近多久检测过的节点，例如 `5m`、`30m`、`2h`。</p>
+          </div>
+          <div class="mini-card">
+            <h3>`verify`</h3>
+            <p>`1` 表示出口前只给有效节点；`0` 表示允许更宽松的候选池。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">调用示例</h2>
+            <p class="section-desc">把 `&lt;BASE&gt;` 替换为你的服务域名或 `http://127.0.0.1:38482` 即可。</p>
+          </div>
+        </div>
+        <pre><code># 1) 获取最近可用的 JSON 节点
+curl -H 'X-API-Key: {{if .Token}}{{.Token}}{{else}}&lt;你的token&gt;{{end}}' \
+  '&lt;BASE&gt;/api/v1/nodes?verify=1&limit=20&countries=JP,SG&max_latency_ms=800'
+
+# 2) 取一个随机单节点
+curl -H 'X-API-Key: {{if .Token}}{{.Token}}{{else}}&lt;你的token&gt;{{end}}' \
+  '&lt;BASE&gt;/api/v1/nodes/random?verify=1&protocols=http,socks5'
+
+# 3) 获取 Clash 订阅
+curl -H 'X-API-Key: {{if .Token}}{{.Token}}{{else}}&lt;你的token&gt;{{end}}' \
+  '&lt;BASE&gt;/sub/clash?verify=1&limit=200&min_purity=70'
+
+# 4) 获取 V2Ray 订阅
+curl -H 'X-API-Key: {{if .Token}}{{.Token}}{{else}}&lt;你的token&gt;{{end}}' \
+  '&lt;BASE&gt;/sub/v2ray?verify=1&protocols=ss,vmess,vless,trojan'</code></pre>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title">常见问题</h2>
+            <p class="section-desc">这些问题最常见，也最容易误判成系统故障。</p>
+          </div>
+        </div>
+        <ul class="helper-list">
+          <li><span class="helper-key">为什么浏览器打开 UI 提示未授权？</span>因为浏览器地址栏不会自动带 `X-API-Key`，需要改成 `?token=...`。</li>
+          <li><span class="helper-key">为什么 `verify=1` 时返回为空？</span>说明当前筛选条件下 fresh 有效节点不足，可以放宽国家、纯净度或 fresh 时间窗。</li>
+          <li><span class="helper-key">为什么节点很多但有效少？</span>公共代理质量波动很大，建议在“抓取源”页停掉低收益源，减少无效检测开销。</li>
+        </ul>
+      </div>
+    </div>
+  </body>
+</html>
