@@ -23,7 +23,7 @@ capture_explicit_overrides() {
   declare -gA EXPLICIT_OVERRIDES=()
   local key
   for key in \
-    APP_DIR IMAGE HOST_PORT API_KEYS API_KEY PUBLIC_BASE_URL GOMAXPROCS \
+    APP_DIR IMAGE HOST_PORT API_KEYS API_KEY PUBLIC_BASE_URL FETCH_PROFILE SOURCE_INTERVAL_SEC GOMAXPROCS \
     AUTO_FETCH_ENABLED AUTO_VALIDATE_ENABLED FETCH_TICK_INTERVAL FETCH_MAX_PER_TICK \
     SOURCE_WORKERS SOURCE_TIMEOUT INGEST_MAX_PER_SOURCE VALIDATE_WORKERS \
     VALIDATE_TIMEOUT SOURCE_SAMPLE_VALIDATE MIN_FRESH_POOL_SIZE \
@@ -63,6 +63,20 @@ ensure_prerequisites() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
   apt-get install -y ca-certificates curl gnupg lsb-release openssl ufw
+}
+
+ensure_sqlite3_if_needed() {
+  if [[ -z "${SOURCE_INTERVAL_SEC}" ]]; then
+    return
+  fi
+
+  if command -v sqlite3 >/dev/null 2>&1; then
+    return
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get install -y sqlite3
 }
 
 install_docker() {
@@ -106,6 +120,67 @@ validate_port() {
   fi
 }
 
+validate_fetch_profile() {
+  case "${FETCH_PROFILE}" in
+    ""|lite|full|aggressive|custom)
+      ;;
+    *)
+      die "FETCH_PROFILE 仅支持 lite、full、aggressive、custom，当前值：${FETCH_PROFILE}"
+      ;;
+  esac
+}
+
+validate_source_interval() {
+  if [[ -z "${SOURCE_INTERVAL_SEC}" ]]; then
+    return
+  fi
+  [[ "${SOURCE_INTERVAL_SEC}" =~ ^[0-9]+$ ]] || die "SOURCE_INTERVAL_SEC 必须是数字，当前值：${SOURCE_INTERVAL_SEC}"
+  if (( SOURCE_INTERVAL_SEC < 1 )); then
+    die "SOURCE_INTERVAL_SEC 必须大于等于 1，当前值：${SOURCE_INTERVAL_SEC}"
+  fi
+}
+
+apply_profile_defaults() {
+  case "${FETCH_PROFILE}" in
+    lite|"")
+      GOMAXPROCS="1"
+      SOURCE_INTERVAL_SEC=""
+      AUTO_FETCH_ENABLED="true"
+      AUTO_VALIDATE_ENABLED="true"
+      FETCH_TICK_INTERVAL="60s"
+      FETCH_MAX_PER_TICK="2"
+      SOURCE_WORKERS="2"
+      SOURCE_TIMEOUT="12s"
+      INGEST_MAX_PER_SOURCE="1500"
+      VALIDATE_WORKERS="20"
+      VALIDATE_TIMEOUT="6s"
+      SOURCE_SAMPLE_VALIDATE="5"
+      MIN_FRESH_POOL_SIZE="50"
+      NODEMAVEN_ENABLED="false"
+      PURITY_LOOKUP_ENABLED="false"
+      ;;
+    full|aggressive)
+      GOMAXPROCS="2"
+      SOURCE_INTERVAL_SEC="60"
+      AUTO_FETCH_ENABLED="true"
+      AUTO_VALIDATE_ENABLED="true"
+      FETCH_TICK_INTERVAL="1s"
+      FETCH_MAX_PER_TICK="1000"
+      SOURCE_WORKERS="50"
+      SOURCE_TIMEOUT="12s"
+      INGEST_MAX_PER_SOURCE="5000"
+      VALIDATE_WORKERS="30"
+      VALIDATE_TIMEOUT="6s"
+      SOURCE_SAMPLE_VALIDATE="10"
+      MIN_FRESH_POOL_SIZE="200"
+      NODEMAVEN_ENABLED="true"
+      PURITY_LOOKUP_ENABLED="false"
+      ;;
+    custom)
+      ;;
+  esac
+}
+
 load_existing_env_if_any() {
   local env_path="${APP_DIR}/.env"
   if [[ -f "${env_path}" ]]; then
@@ -135,6 +210,8 @@ IMAGE=${IMAGE}
 HOST_PORT=${HOST_PORT}
 API_KEYS=${API_KEYS}
 PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+FETCH_PROFILE=${FETCH_PROFILE}
+SOURCE_INTERVAL_SEC=${SOURCE_INTERVAL_SEC}
 
 GOMAXPROCS=${GOMAXPROCS}
 
@@ -217,6 +294,19 @@ deploy_container() {
   docker compose up -d
 }
 
+apply_source_interval_override() {
+  if [[ -z "${SOURCE_INTERVAL_SEC}" ]]; then
+    return
+  fi
+
+  local db_path="${APP_DIR}/data/proxypool.db"
+  [[ -f "${db_path}" ]] || die "未找到数据库文件：${db_path}"
+
+  sqlite3 "${db_path}" \
+    "UPDATE sources SET interval_sec=${SOURCE_INTERVAL_SEC}, next_fetch_at=strftime('%s','now') WHERE enabled=1;"
+  log "已将所有启用抓取源的间隔统一调整为 ${SOURCE_INTERVAL_SEC} 秒，并触发立即进入下一轮抓取。"
+}
+
 wait_for_healthcheck() {
   local url="http://127.0.0.1:${HOST_PORT}/healthz"
   local attempt
@@ -254,6 +344,8 @@ show_summary() {
 镜像地址: ${IMAGE}
 监听端口: ${HOST_PORT}
 API Token: ${API_KEYS}
+抓取模式: ${FETCH_PROFILE:-lite}
+源抓取间隔: ${SOURCE_INTERVAL_SEC:-保留各源默认值}
 
 本机检查:
   curl http://127.0.0.1:${HOST_PORT}/healthz
@@ -279,22 +371,20 @@ main() {
   HOST_PORT="${DEFAULT_HOST_PORT}"
   API_KEYS=""
   PUBLIC_BASE_URL=""
-  GOMAXPROCS="1"
-  AUTO_FETCH_ENABLED="true"
-  AUTO_VALIDATE_ENABLED="true"
-  FETCH_TICK_INTERVAL="60s"
-  FETCH_MAX_PER_TICK="2"
-  SOURCE_WORKERS="2"
-  SOURCE_TIMEOUT="12s"
-  INGEST_MAX_PER_SOURCE="1500"
-  VALIDATE_WORKERS="20"
-  VALIDATE_TIMEOUT="6s"
-  SOURCE_SAMPLE_VALIDATE="5"
-  MIN_FRESH_POOL_SIZE="50"
-  NODEMAVEN_ENABLED="false"
-  PURITY_LOOKUP_ENABLED="false"
+  FETCH_PROFILE="full"
+  SOURCE_INTERVAL_SEC="60"
+
+  apply_profile_defaults
 
   load_existing_env_if_any
+
+  if [[ -n "${EXPLICIT_OVERRIDES[FETCH_PROFILE]-}" ]]; then
+    FETCH_PROFILE="${EXPLICIT_OVERRIDES[FETCH_PROFILE]}"
+    validate_fetch_profile
+    apply_profile_defaults
+  else
+    validate_fetch_profile
+  fi
 
   apply_override IMAGE
   apply_override HOST_PORT
@@ -303,6 +393,7 @@ main() {
     API_KEYS="${EXPLICIT_OVERRIDES[API_KEY]}"
   fi
   apply_override PUBLIC_BASE_URL
+  apply_override SOURCE_INTERVAL_SEC
   apply_override GOMAXPROCS
   apply_override AUTO_FETCH_ENABLED
   apply_override AUTO_VALIDATE_ENABLED
@@ -319,7 +410,9 @@ main() {
   apply_override PURITY_LOOKUP_ENABLED
 
   validate_port
+  validate_source_interval
   ensure_prerequisites
+  ensure_sqlite3_if_needed
   install_docker
 
   mkdir -p "${APP_DIR}/data"
@@ -330,6 +423,7 @@ main() {
   open_firewall_if_needed
   deploy_container
   wait_for_healthcheck
+  apply_source_interval_override
   show_summary
 }
 

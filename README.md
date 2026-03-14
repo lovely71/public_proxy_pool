@@ -316,7 +316,7 @@ docker compose up -d --build
 - 创建 `/opt/public_proxy_pool`
 - 生成 `.env` 和 `docker-compose.yml`
 - 拉取公共镜像 `ghcr.io/lovely71/public_proxy_pool:latest`
-- 以更适合小机的保守参数启动服务
+- 默认以全速模式启动服务
 - 做健康检查并输出后台访问地址
 
 ### 用法一：先把仓库传上服务器再执行
@@ -329,6 +329,14 @@ sudo bash scripts/deploy_oracle_ubuntu.sh
 
 ```bash
 sudo HOST_PORT=38482 API_KEY='your-strong-token' PUBLIC_BASE_URL='http://YOUR_SERVER_IP:38482' \
+  bash scripts/deploy_oracle_ubuntu.sh
+```
+
+脚本默认就是全速模式。如果你想显式指定，例如 `50` 并发抓取并把所有源统一改成每 `60` 秒轮询一次：
+
+```bash
+sudo HOST_PORT=7171 API_KEY=bailu PUBLIC_BASE_URL=http://YOUR_SERVER_IP:7171 \
+  FETCH_PROFILE=full SOURCE_INTERVAL_SEC=60 \
   bash scripts/deploy_oracle_ubuntu.sh
 ```
 
@@ -346,6 +354,14 @@ ssh ubuntu@YOUR_SERVER_IP \
   < scripts/deploy_oracle_ubuntu.sh
 ```
 
+带高抓取并发模式的远程一键部署例子：
+
+```bash
+ssh ubuntu@YOUR_SERVER_IP \
+  "sudo env HOST_PORT=7171 API_KEY=bailu PUBLIC_BASE_URL=http://YOUR_SERVER_IP:7171 FETCH_PROFILE=full SOURCE_INTERVAL_SEC=60 bash -s" \
+  < scripts/deploy_oracle_ubuntu.sh
+```
+
 部署完成后，脚本会输出：
 
 - 本机检查命令
@@ -359,7 +375,7 @@ ssh ubuntu@YOUR_SERVER_IP \
 - 在实例所在子网的 `Security List` 或绑定的 `NSG` 中，放行入站 `TCP/你的端口`
 - 如果主机自己启用了 `ufw`，脚本会自动尝试放行该端口
 
-脚本默认使用轻量参数，适合小规格机器。如果你后面想调高抓取/验证并发，可以直接修改服务器上的：
+脚本默认使用全速参数。如果你想进一步手动调高或切回轻量模式，可以直接修改服务器上的：
 
 ```text
 /opt/public_proxy_pool/.env
@@ -371,3 +387,23 @@ ssh ubuntu@YOUR_SERVER_IP \
 cd /opt/public_proxy_pool
 docker compose up -d
 ```
+
+### 抓取模式说明
+
+脚本现在支持以下部署模式：
+
+- `FETCH_PROFILE=full`：默认值，会启用 `SOURCE_WORKERS=50`、`FETCH_MAX_PER_TICK=1000`、`FETCH_TICK_INTERVAL=1s`，并默认把所有启用源统一调整为 `60` 秒轮询
+- `FETCH_PROFILE=aggressive`：`full` 的兼容别名
+- `FETCH_PROFILE=lite`：适合小规格机器，抓取和验证都比较保守
+- `FETCH_PROFILE=custom`：不套用预设，你可以完全通过环境变量手动指定各项参数
+
+如果你希望“几乎不停抓取”，默认的 `FETCH_PROFILE=full` 已经会配合：
+
+- `SOURCE_INTERVAL_SEC=60`：部署完成后，把数据库里所有启用源的抓取间隔统一改成 `60` 秒
+
+说明：
+
+- `full` 模式会以 `50` 并发抓取所有到点源，而不是每轮只抓前 `50` 个源
+- 当前仓库内置了完整 fallback 默认源集合，即使部署环境里没有参考 `service.py`，也会自动种下全部内置默认源
+- 仅把 `SOURCE_WORKERS` 调到 `50` 还不够，因为每个源自身还有独立抓取间隔
+- `SOURCE_INTERVAL_SEC` 会在部署后直接更新 SQLite 里的 `interval_sec` 和 `next_fetch_at`

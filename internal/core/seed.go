@@ -26,8 +26,8 @@ func SeedDefaultSources(st *store.Store, cfg *config.Config) error {
 	wd, _ := os.Getwd()
 	defs, err := sources.LoadGitHubSourcesFromServicePy(wd)
 	if err != nil {
-		slog.Warn("load default github sources from service.py failed; falling back to minimal set", "error", err)
-		defs = minimalGitHubSources()
+		slog.Warn("load default github sources from service.py failed; falling back to built-in source set", "error", err)
+		defs = sources.BuiltInGitHubSources()
 	}
 
 	for _, d := range defs {
@@ -68,31 +68,3 @@ func SeedDefaultSources(st *store.Store, cfg *config.Config) error {
 	slog.Info("seeded sources", "count", len(defs))
 	return nil
 }
-
-func minimalGitHubSources() []sources.SourceDef {
-	return []sources.SourceDef{
-		{
-			Name:          "topchina-readme",
-			Type:          "github_raw_text",
-			URL:           "https://raw.githubusercontent.com/TopChina/proxy-list/main/README.md",
-			Parser:        "topchina",
-			DefaultScheme: "http",
-			RepoURL:       "https://github.com/TopChina/proxy-list",
-			UpdateHint:    "README 表格维护，持续更新",
-			Enabled:       true,
-			IntervalSec:   3600,
-		},
-		{
-			Name:          "proxyscraper-http",
-			Type:          "github_raw_text",
-			URL:           "https://raw.githubusercontent.com/ProxyScraper/ProxyScraper/main/http.txt",
-			Parser:        "generic",
-			DefaultScheme: "http",
-			RepoURL:       "https://github.com/ProxyScraper/ProxyScraper",
-			UpdateHint:    "公开说明约每 30 分钟更新",
-			Enabled:       true,
-			IntervalSec:   3600,
-		},
-	}
-}
-
