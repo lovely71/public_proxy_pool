@@ -15,14 +15,6 @@ func SeedDefaultSources(st *store.Store, cfg *config.Config) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	count, err := st.SourceCount(ctx)
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-
 	wd, _ := os.Getwd()
 	defs, err := sources.LoadGitHubSourcesFromServicePy(wd)
 	if err != nil {
