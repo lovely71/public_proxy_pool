@@ -16,13 +16,14 @@ import (
 )
 
 type Supervisor struct {
-	st  *store.Store
-	val *validator.Validator
-	cfg *config.Config
+	st        *store.Store
+	val       *validator.Validator
+	cfg       *config.Config
+	startedAt time.Time
 }
 
 func NewSupervisor(st *store.Store, val *validator.Validator, cfg *config.Config) *Supervisor {
-	return &Supervisor{st: st, val: val, cfg: cfg}
+	return &Supervisor{st: st, val: val, cfg: cfg, startedAt: time.Now()}
 }
 
 func (s *Supervisor) Run(ctx context.Context) error {
@@ -49,23 +50,24 @@ func (s *Supervisor) Run(ctx context.Context) error {
 }
 
 func (s *Supervisor) fetchLoop(ctx context.Context) error {
-	ticker := time.NewTicker(s.cfg.FetchTickInterval)
-	defer ticker.Stop()
 	for {
-		if err := s.fetchTick(ctx); err != nil {
+		now := time.Now()
+		if err := s.fetchTick(ctx, now); err != nil {
 			slog.Warn("fetch tick failed", "error", err)
 		}
+		wait := s.fetchTickInterval(now)
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return ctx.Err()
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }
 
-func (s *Supervisor) fetchTick(ctx context.Context) error {
-	now := time.Now()
-	due, err := s.st.GetSourcesDue(ctx, now, s.cfg.FetchMaxPerTick)
+func (s *Supervisor) fetchTick(ctx context.Context, now time.Time) error {
+	due, err := s.st.GetSourcesDue(ctx, now, s.fetchMaxPerTick(now))
 	if err != nil {
 		return err
 	}
@@ -73,7 +75,7 @@ func (s *Supervisor) fetchTick(ctx context.Context) error {
 		return nil
 	}
 
-	sem := make(chan struct{}, max(1, s.cfg.SourceWorkers))
+	sem := make(chan struct{}, max(1, s.sourceWorkers(now)))
 	type fetchOut struct {
 		src store.Source
 		err error
@@ -100,8 +102,8 @@ func (s *Supervisor) fetchTick(ctx context.Context) error {
 func (s *Supervisor) fetchOne(ctx context.Context, now time.Time, src store.Source) error {
 	nextFetch := now.Add(time.Duration(src.IntervalSec) * time.Second).Unix()
 	meta := store.FetchMetaUpdate{
-		LastFetchAt: now.Unix(),
-		ETag:        src.ETag,
+		LastFetchAt:  now.Unix(),
+		ETag:         src.ETag,
 		LastModified: src.LastModified,
 		LastError:    "",
 		NextFetchAt:  nextFetch,
@@ -347,8 +349,9 @@ func (s *Supervisor) fetchOne(ctx context.Context, now time.Time, src store.Sour
 	_ = s.st.UpdateSourceFetchMeta(ctx, src.ID, meta)
 
 	// Sample validate (best-effort).
-	if len(upserts) > 0 && s.cfg.SourceSampleValidate > 0 {
-		sampleN := min(s.cfg.SourceSampleValidate, len(upserts))
+	sampleValidate := s.sourceSampleValidate(now)
+	if len(upserts) > 0 && sampleValidate > 0 {
+		sampleN := min(sampleValidate, len(upserts))
 		rand.Shuffle(len(upserts), func(i, j int) { upserts[i], upserts[j] = upserts[j], upserts[i] })
 		for i := 0; i < sampleN; i++ {
 			u := upserts[i]
@@ -416,11 +419,12 @@ func (s *Supervisor) ensureFreshPool(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if int(stats.NodesFreshOK) >= s.cfg.MinFreshPoolSize {
+	minFreshPoolSize := s.minFreshPoolSize(now)
+	if int(stats.NodesFreshOK) >= minFreshPoolSize {
 		return nil
 	}
 
-	need := s.cfg.MinFreshPoolSize - int(stats.NodesFreshOK)
+	need := minFreshPoolSize - int(stats.NodesFreshOK)
 	if need <= 0 {
 		return nil
 	}
@@ -458,6 +462,46 @@ func backoffUntil(now time.Time, prev int64) int64 {
 }
 
 func itoa(v int) string { return strconv.Itoa(v) }
+
+func (s *Supervisor) inWarmup(now time.Time) bool {
+	w := s.cfg.StartupWarmup.Duration
+	return w > 0 && now.Sub(s.startedAt) < w
+}
+
+func (s *Supervisor) fetchTickInterval(now time.Time) time.Duration {
+	if s.inWarmup(now) && s.cfg.StartupWarmup.FetchTickInterval > 0 {
+		return s.cfg.StartupWarmup.FetchTickInterval
+	}
+	return s.cfg.FetchTickInterval
+}
+
+func (s *Supervisor) fetchMaxPerTick(now time.Time) int {
+	if s.inWarmup(now) && s.cfg.StartupWarmup.FetchMaxPerTick > 0 {
+		return s.cfg.StartupWarmup.FetchMaxPerTick
+	}
+	return s.cfg.FetchMaxPerTick
+}
+
+func (s *Supervisor) sourceWorkers(now time.Time) int {
+	if s.inWarmup(now) && s.cfg.StartupWarmup.SourceWorkers > 0 {
+		return s.cfg.StartupWarmup.SourceWorkers
+	}
+	return s.cfg.SourceWorkers
+}
+
+func (s *Supervisor) sourceSampleValidate(now time.Time) int {
+	if s.inWarmup(now) && s.cfg.StartupWarmup.SourceSampleValidate > 0 {
+		return s.cfg.StartupWarmup.SourceSampleValidate
+	}
+	return s.cfg.SourceSampleValidate
+}
+
+func (s *Supervisor) minFreshPoolSize(now time.Time) int {
+	if s.inWarmup(now) && s.cfg.StartupWarmup.MinFreshPoolSize > 0 {
+		return s.cfg.StartupWarmup.MinFreshPoolSize
+	}
+	return s.cfg.MinFreshPoolSize
+}
 
 func min(a, b int) int {
 	if a < b {

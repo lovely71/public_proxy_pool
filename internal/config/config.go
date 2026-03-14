@@ -16,18 +16,18 @@ type Config struct {
 	GeoIPCountryMMDB string
 	GeoIPASNMMDB     string
 
-	APIKeys []string
+	APIKeys        []string
 	RateLimitRPS   float64
 	RateLimitBurst int
 
 	AutoFetchEnabled    bool
 	AutoValidateEnabled bool
 
-	FetchTickInterval time.Duration
-	FetchMaxPerTick   int
+	FetchTickInterval  time.Duration
+	FetchMaxPerTick    int
 	IngestMaxPerSource int
-	SourceTimeout     time.Duration
-	SourceWorkers     int
+	SourceTimeout      time.Duration
+	SourceWorkers      int
 
 	ValidateWorkers      int
 	ValidateTimeout      time.Duration
@@ -46,6 +46,7 @@ type Config struct {
 	TCPCheckWorkers   int
 	PurityLookup      PurityLookupConfig
 	NodeMaven         NodeMavenConfig
+	StartupWarmup     StartupWarmupConfig
 	V2RayValidateMode string // "tcp" | "sing-box" (best-effort)
 	SingBoxPath       string
 
@@ -69,25 +70,35 @@ type PurityLookupConfig struct {
 	CacheTTL time.Duration
 }
 
+type StartupWarmupConfig struct {
+	Duration             time.Duration
+	FetchTickInterval    time.Duration
+	FetchMaxPerTick      int
+	SourceWorkers        int
+	ValidateWorkers      int
+	SourceSampleValidate int
+	MinFreshPoolSize     int
+}
+
 func Load() (*Config, error) {
 	cfg := &Config{
-		HTTPAddr:      envString("HTTP_ADDR", ":8080"),
-		PublicBaseURL: strings.TrimRight(envString("PUBLIC_BASE_URL", ""), "/"),
-		SQLitePath:    envString("SQLITE_PATH", "./data/proxypool.db"),
+		HTTPAddr:         envString("HTTP_ADDR", ":8080"),
+		PublicBaseURL:    strings.TrimRight(envString("PUBLIC_BASE_URL", ""), "/"),
+		SQLitePath:       envString("SQLITE_PATH", "./data/proxypool.db"),
 		GeoIPCountryMMDB: envString("GEOIP_COUNTRY_MMDB", ""),
 		GeoIPASNMMDB:     envString("GEOIP_ASN_MMDB", ""),
-		APIKeys:       splitCSV(envString("API_KEYS", "")),
-		RateLimitRPS:   envFloat("RATE_LIMIT_RPS", 0),
-		RateLimitBurst: envInt("RATE_LIMIT_BURST", 0),
+		APIKeys:          splitCSV(envString("API_KEYS", "")),
+		RateLimitRPS:     envFloat("RATE_LIMIT_RPS", 0),
+		RateLimitBurst:   envInt("RATE_LIMIT_BURST", 0),
 
 		AutoFetchEnabled:    envBool("AUTO_FETCH_ENABLED", true),
 		AutoValidateEnabled: envBool("AUTO_VALIDATE_ENABLED", true),
 
-		FetchTickInterval: envDuration("FETCH_TICK_INTERVAL", 30*time.Second),
-		FetchMaxPerTick:   envInt("FETCH_MAX_PER_TICK", 10),
+		FetchTickInterval:  envDuration("FETCH_TICK_INTERVAL", 30*time.Second),
+		FetchMaxPerTick:    envInt("FETCH_MAX_PER_TICK", 10),
 		IngestMaxPerSource: envInt("INGEST_MAX_PER_SOURCE", 5000),
-		SourceTimeout:     envDuration("SOURCE_TIMEOUT", 18*time.Second),
-		SourceWorkers:     envInt("SOURCE_WORKERS", 12),
+		SourceTimeout:      envDuration("SOURCE_TIMEOUT", 18*time.Second),
+		SourceWorkers:      envInt("SOURCE_WORKERS", 12),
 
 		ValidateWorkers:      envInt("VALIDATE_WORKERS", 50),
 		ValidateTimeout:      envDuration("VALIDATE_TIMEOUT", 8*time.Second),
@@ -129,6 +140,16 @@ func Load() (*Config, error) {
 		PerPage:     envInt("NODEMAVEN_PER_PAGE", 100),
 		MaxPages:    envInt("NODEMAVEN_MAX_PAGES", 5),
 		Concurrency: envInt("NODEMAVEN_CONCURRENCY", 5),
+	}
+
+	cfg.StartupWarmup = StartupWarmupConfig{
+		Duration:             envDuration("STARTUP_WARMUP_DURATION", 0),
+		FetchTickInterval:    envDuration("STARTUP_WARMUP_FETCH_TICK_INTERVAL", 0),
+		FetchMaxPerTick:      envInt("STARTUP_WARMUP_FETCH_MAX_PER_TICK", 0),
+		SourceWorkers:        envInt("STARTUP_WARMUP_SOURCE_WORKERS", 0),
+		ValidateWorkers:      envInt("STARTUP_WARMUP_VALIDATE_WORKERS", 0),
+		SourceSampleValidate: envInt("STARTUP_WARMUP_SOURCE_SAMPLE_VALIDATE", 0),
+		MinFreshPoolSize:     envInt("STARTUP_WARMUP_MIN_FRESH_POOL_SIZE", 0),
 	}
 
 	return cfg, nil

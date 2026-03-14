@@ -392,18 +392,43 @@ docker compose up -d
 
 脚本现在支持以下部署模式：
 
-- `FETCH_PROFILE=full`：默认值，会启用 `SOURCE_WORKERS=50`、`FETCH_MAX_PER_TICK=1000`、`FETCH_TICK_INTERVAL=1s`，并默认把所有启用源统一调整为 `60` 秒轮询
+- `FETCH_PROFILE=full`：默认值；在 `1C1G` 上会走长期稳态安全档，在更高配置机器上会逐步进入更高并发稳态；默认把所有启用源统一调整为 `1800` 秒轮询
 - `FETCH_PROFILE=aggressive`：`full` 的兼容别名
 - `FETCH_PROFILE=lite`：适合小规格机器，抓取和验证都比较保守
 - `FETCH_PROFILE=custom`：不套用预设，你可以完全通过环境变量手动指定各项参数
 
+`full` 模式会按机器核数自动调整强度：
+
+- `1C`：走长期稳态安全档，优先避免 CPU 打满
+- `2C`：短预热后进入更高并发稳态
+- `4C+`：短预热后进入满血稳态
+
 如果你希望“几乎不停抓取”，默认的 `FETCH_PROFILE=full` 已经会配合：
 
-- `SOURCE_INTERVAL_SEC=60`：部署完成后，把数据库里所有启用源的抓取间隔统一改成 `60` 秒
+- `SOURCE_INTERVAL_SEC=1800`：部署完成后，把数据库里所有启用源的抓取间隔统一改成 `1800` 秒，也就是 `30` 分钟
+- `INGEST_MAX_PER_SOURCE=0`：不限制每个源的入库上限，尽量保留所有抓到的节点
 
 说明：
 
-- `full` 模式会以 `50` 并发抓取所有到点源，而不是每轮只抓前 `50` 个源
+- `1C` 机器的 `full` 模式会用更保守的长期参数：
+  `SOURCE_WORKERS=3`
+  `VALIDATE_WORKERS=3`
+  `FETCH_TICK_INTERVAL=5s`
+  `FETCH_MAX_PER_TICK=500`
+  `SOURCE_SAMPLE_VALIDATE=0`
+  `MIN_FRESH_POOL_SIZE=300`
+  `FRESH_WITHIN_DEFAULT=1h`
+- 这样会抓得更慢，但更适合 `1C1G` 长期运行，不容易把 VPS 顶死
+- 这里的 `300` 指的是“近 `1` 小时内校验通过的可用节点”目标，而不是“近 `5` 分钟 fresh 节点 300 个”
+- `2C+` 机器仍然会逐步恢复到更高并发
 - 当前仓库内置了完整 fallback 默认源集合，即使部署环境里没有参考 `service.py`，也会自动种下全部内置默认源
-- 仅把 `SOURCE_WORKERS` 调到 `50` 还不够，因为每个源自身还有独立抓取间隔
+- 仅把 `SOURCE_WORKERS` 调高还不够，因为每个源自身还有独立抓取间隔
+- 如果你想手工覆盖预热策略，可以设置：
+  `STARTUP_WARMUP_DURATION`
+  `STARTUP_WARMUP_FETCH_TICK_INTERVAL`
+  `STARTUP_WARMUP_FETCH_MAX_PER_TICK`
+  `STARTUP_WARMUP_SOURCE_WORKERS`
+  `STARTUP_WARMUP_VALIDATE_WORKERS`
+  `STARTUP_WARMUP_SOURCE_SAMPLE_VALIDATE`
+  `STARTUP_WARMUP_MIN_FRESH_POOL_SIZE`
 - `SOURCE_INTERVAL_SEC` 会在部署后直接更新 SQLite 里的 `interval_sec` 和 `next_fetch_at`

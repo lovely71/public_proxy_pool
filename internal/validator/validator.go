@@ -70,11 +70,12 @@ type Validator struct {
 	cfg *config.Config
 	geo *geoip.DB
 
-	mu       sync.Mutex
-	started  bool
-	queue    *priorityQueue
-	inFlight map[int64]struct{}
-	waiters  map[int64][]chan ValidationResult
+	mu        sync.Mutex
+	started   bool
+	startedAt time.Time
+	queue     *priorityQueue
+	inFlight  map[int64]struct{}
+	waiters   map[int64][]chan ValidationResult
 }
 
 func New(st *store.Store, cfg *config.Config, geo *geoip.DB) *Validator {
@@ -95,14 +96,18 @@ func (v *Validator) Start(ctx context.Context) {
 		return
 	}
 	v.started = true
-	workers := v.cfg.ValidateWorkers
-	if workers <= 0 {
-		workers = 50
-	}
+	v.startedAt = time.Now()
+	initialWorkers := v.initialValidateWorkers()
 	v.mu.Unlock()
 
-	for i := 0; i < workers; i++ {
-		go v.worker(ctx, i)
+	v.startWorkers(ctx, initialWorkers)
+
+	targetWorkers := v.cfg.ValidateWorkers
+	if targetWorkers <= 0 {
+		targetWorkers = 50
+	}
+	if initialWorkers < targetWorkers && v.cfg.StartupWarmup.Duration > 0 {
+		go v.scaleWorkersAfterWarmup(ctx, targetWorkers-initialWorkers, v.cfg.StartupWarmup.Duration)
 	}
 }
 
@@ -168,6 +173,37 @@ func (v *Validator) worker(ctx context.Context, idx int) {
 		}
 		res := v.runOne(ctx, task)
 		v.finish(task, res)
+	}
+}
+
+func (v *Validator) initialValidateWorkers() int {
+	workers := v.cfg.ValidateWorkers
+	if workers <= 0 {
+		workers = 50
+	}
+	if v.cfg.StartupWarmup.Duration > 0 && v.cfg.StartupWarmup.ValidateWorkers > 0 {
+		return min(v.cfg.StartupWarmup.ValidateWorkers, workers)
+	}
+	return workers
+}
+
+func (v *Validator) startWorkers(ctx context.Context, count int) {
+	if count <= 0 {
+		return
+	}
+	for i := 0; i < count; i++ {
+		go v.worker(ctx, i)
+	}
+}
+
+func (v *Validator) scaleWorkersAfterWarmup(ctx context.Context, extra int, wait time.Duration) {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return
+	case <-timer.C:
+		v.startWorkers(ctx, extra)
 	}
 }
 
@@ -444,9 +480,9 @@ func (v *Validator) httpClientForProxy(node store.Node) (*http.Client, error) {
 			TLSClientConfig: &tls.Config{
 				MinVersion: tls.VersionTLS12,
 			},
-			DisableKeepAlives:  true,
-			ForceAttemptHTTP2:  false,
-			IdleConnTimeout:    5 * time.Second,
+			DisableKeepAlives:     true,
+			ForceAttemptHTTP2:     false,
+			IdleConnTimeout:       5 * time.Second,
 			ResponseHeaderTimeout: timeout,
 		}
 		client := &http.Client{Timeout: timeout, Transport: tr}
@@ -469,10 +505,10 @@ func (v *Validator) httpClientForProxy(node store.Node) (*http.Client, error) {
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				return d.Dial(network, addr)
 			},
-			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-			DisableKeepAlives:  true,
-			ForceAttemptHTTP2:  false,
-			IdleConnTimeout:    5 * time.Second,
+			TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+			DisableKeepAlives:     true,
+			ForceAttemptHTTP2:     false,
+			IdleConnTimeout:       5 * time.Second,
 			ResponseHeaderTimeout: timeout,
 		}
 		return &http.Client{Timeout: timeout, Transport: tr}, nil
@@ -481,10 +517,10 @@ func (v *Validator) httpClientForProxy(node store.Node) (*http.Client, error) {
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				return dialSOCKS4(ctx, node, network, addr, timeout)
 			},
-			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-			DisableKeepAlives:  true,
-			ForceAttemptHTTP2:  false,
-			IdleConnTimeout:    5 * time.Second,
+			TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+			DisableKeepAlives:     true,
+			ForceAttemptHTTP2:     false,
+			IdleConnTimeout:       5 * time.Second,
 			ResponseHeaderTimeout: timeout,
 		}
 		return &http.Client{Timeout: timeout, Transport: tr}, nil
@@ -966,10 +1002,10 @@ func httpClientViaSOCKS(host string, port int, timeout time.Duration) (*http.Cli
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return d.Dial(network, addr)
 		},
-		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-		DisableKeepAlives:  true,
-		ForceAttemptHTTP2:  false,
-		IdleConnTimeout:    5 * time.Second,
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+		DisableKeepAlives:     true,
+		ForceAttemptHTTP2:     false,
+		IdleConnTimeout:       5 * time.Second,
 		ResponseHeaderTimeout: timeout,
 	}
 	return &http.Client{Timeout: timeout, Transport: tr}, nil
@@ -1078,4 +1114,11 @@ func applySingBoxTransport(out map[string]any, p *v2ray.Parsed) {
 		}
 		out["transport"] = tr
 	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
