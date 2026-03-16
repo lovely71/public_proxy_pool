@@ -388,6 +388,53 @@ button {
   gap: var(--space-4);
 }
 
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.config-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  background: rgba(244, 247, 251, 0.9);
+  border: 1px solid rgba(121, 139, 168, 0.16);
+}
+
+.config-label {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.config-value {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.35;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.config-value.tone-ok {
+  color: var(--accent-green);
+}
+
+.config-value.tone-warn {
+  color: var(--accent-amber);
+}
+
+.config-value.tone-bad {
+  color: var(--accent-red);
+}
+
+.config-hint {
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .link-card {
   display: block;
   padding: 18px;
@@ -734,6 +781,10 @@ tbody tr:hover {
   align-items: start;
 }
 
+.split-balanced {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 @media (max-width: 1120px) {
   .hero,
   .split {
@@ -746,7 +797,8 @@ tbody tr:hover {
 
   .field-grid,
   .field-grid.compact,
-  .link-grid {
+  .link-grid,
+  .config-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -771,7 +823,8 @@ tbody tr:hover {
   .stats-grid,
   .field-grid,
   .field-grid.compact,
-  .link-grid {
+  .link-grid,
+  .config-grid {
     grid-template-columns: 1fr;
   }
 

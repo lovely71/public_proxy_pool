@@ -29,10 +29,10 @@ func TestRenderClash_Basic(t *testing.T) {
 	vmessURI := "vmess://" + base64.RawStdEncoding.EncodeToString(b)
 
 	nodes := []store.Node{
-		{Kind: model.KindProxy, Protocol: "http", Host: "1.1.1.1", Port: 8080, RawURI: "http://1.1.1.1:8080", Country: "HK"},
-		{Kind: model.KindProxy, Protocol: "socks5", Host: "2.2.2.2", Port: 1080, RawURI: "socks5://2.2.2.2:1080", Country: "JP"},
-		{Kind: model.KindV2Ray, Protocol: "ss", RawURI: "ss://YWVzLTEyOC1nY206cGFzcw==@3.3.3.3:8388#ss1", Country: "US"},
-		{Kind: model.KindV2Ray, Protocol: "vmess", RawURI: vmessURI, Country: "SG"},
+		{Kind: model.KindProxy, Protocol: "http", Host: "1.1.1.1", Port: 8080, RawURI: "http://1.1.1.1:8080", Country: "HK", PurityScore: 88},
+		{Kind: model.KindProxy, Protocol: "socks5", Host: "2.2.2.2", Port: 1080, RawURI: "socks5://2.2.2.2:1080", Country: "JP", PurityScore: 73},
+		{Kind: model.KindV2Ray, Protocol: "ss", RawURI: "ss://YWVzLTEyOC1nY206cGFzcw==@3.3.3.3:8388#ss1", Country: "US", PurityScore: 91},
+		{Kind: model.KindV2Ray, Protocol: "vmess", RawURI: vmessURI, Country: "SG", PurityScore: 64},
 	}
 
 	yml, err := RenderClash(nodes, "https://www.cloudflare.com/cdn-cgi/trace")
@@ -77,13 +77,17 @@ func TestRenderClash_Basic(t *testing.T) {
 		}
 	}
 	joined := strings.Join(names, "\n")
-	if !strings.Contains(joined, "🇭🇰 香港 | http-1.1.1.1:8080") {
+	if !strings.Contains(joined, "🇭🇰 香港 | http | 纯88") {
 		t.Fatalf("expected decorated hk node name, got:\n%s", joined)
 	}
-	if !strings.Contains(joined, "🇯🇵 日本 | socks5-2.2.2.2:1080") {
+	if !strings.Contains(joined, "🇯🇵 日本 | socks5 | 纯73") {
 		t.Fatalf("expected decorated jp node name, got:\n%s", joined)
 	}
-	if !strings.Contains(joined, "🇺🇸 美国 | ss1") {
+	if !strings.Contains(joined, "🇺🇸 美国 | ss1 | 纯91") {
 		t.Fatalf("expected decorated us node name, got:\n%s", joined)
+	}
+	if strings.Contains(joined, "1.1.1.1") || strings.Contains(joined, "2.2.2.2") || strings.Contains(joined, "3.3.3.3") ||
+		strings.Contains(joined, "8080") || strings.Contains(joined, "1080") || strings.Contains(joined, "8388") {
+		t.Fatalf("expected node names without raw endpoint details, got:\n%s", joined)
 	}
 }

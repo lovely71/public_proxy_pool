@@ -65,17 +65,27 @@ type ValidationResult struct {
 	SourceID    int64
 }
 
+type Snapshot struct {
+	Started        bool
+	StartedAt      time.Time
+	WorkersStarted int
+	QueueLen       int
+	InFlight       int
+	WaitingClients int
+}
+
 type Validator struct {
 	st  *store.Store
 	cfg *config.Config
 	geo *geoip.DB
 
-	mu        sync.Mutex
-	started   bool
-	startedAt time.Time
-	queue     *priorityQueue
-	inFlight  map[int64]struct{}
-	waiters   map[int64][]chan ValidationResult
+	mu             sync.Mutex
+	started        bool
+	startedAt      time.Time
+	workersStarted int
+	queue          *priorityQueue
+	inFlight       map[int64]struct{}
+	waiters        map[int64][]chan ValidationResult
 }
 
 func New(st *store.Store, cfg *config.Config, geo *geoip.DB) *Validator {
@@ -191,8 +201,30 @@ func (v *Validator) startWorkers(ctx context.Context, count int) {
 	if count <= 0 {
 		return
 	}
+	v.mu.Lock()
+	v.workersStarted += count
+	v.mu.Unlock()
 	for i := 0; i < count; i++ {
 		go v.worker(ctx, i)
+	}
+}
+
+func (v *Validator) Snapshot() Snapshot {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	waitingClients := 0
+	for _, ws := range v.waiters {
+		waitingClients += len(ws)
+	}
+
+	return Snapshot{
+		Started:        v.started,
+		StartedAt:      v.startedAt,
+		WorkersStarted: v.workersStarted,
+		QueueLen:       v.queue.Len(),
+		InFlight:       len(v.inFlight),
+		WaitingClients: waitingClients,
 	}
 }
 

@@ -2,6 +2,7 @@ package sub
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,6 +64,8 @@ type renderedClashProxy struct {
 	Entry  map[string]any
 	Region string
 }
+
+var ipv4InNamePattern = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b`)
 
 func RenderClash(nodes []store.Node, testURL string) ([]byte, error) {
 	nameUsed := map[string]int{}
@@ -260,8 +263,9 @@ func proxyNodeToClash(n store.Node) (map[string]any, string) {
 	proto := strings.ToLower(strings.TrimSpace(n.Protocol))
 	name := n.Name
 	if name == "" {
-		name = fmt.Sprintf("%s-%s:%d", proto, n.Host, n.Port)
+		name = defaultClashNodeName(proto)
 	}
+	name = sanitizeNodeDisplayName(name, defaultClashNodeName(proto))
 	switch proto {
 	case "http", "https":
 		m := map[string]any{
@@ -301,8 +305,9 @@ func v2rayNodeToClash(n store.Node) (map[string]any, string) {
 	}
 	name := p.Name
 	if name == "" {
-		name = fmt.Sprintf("%s-%s:%d", p.Protocol, p.Host, p.Port)
+		name = defaultClashNodeName(p.Protocol)
 	}
+	name = sanitizeNodeDisplayName(name, defaultClashNodeName(p.Protocol))
 
 	switch p.Protocol {
 	case "ss":
@@ -439,10 +444,42 @@ func decorateNodeName(n store.Node, name string) string {
 	}
 
 	prefix := strings.TrimSpace(strings.TrimSpace(flag + " " + countryName))
-	if prefix == "" {
-		return name
+	if prefix != "" {
+		name = prefix + " | " + name
 	}
-	return prefix + " | " + name
+
+	if purity := purityLabel(n.PurityScore); purity != "" && !strings.Contains(name, purity) {
+		name += " | " + purity
+	}
+	return name
+}
+
+func purityLabel(score int) string {
+	if score <= 0 {
+		return ""
+	}
+	if score > 100 {
+		score = 100
+	}
+	return fmt.Sprintf("纯%d", score)
+}
+
+func defaultClashNodeName(proto string) string {
+	proto = strings.ToLower(strings.TrimSpace(proto))
+	if proto == "" {
+		proto = "node"
+	}
+	return proto
+}
+
+func sanitizeNodeDisplayName(name, fallback string) string {
+	name = strings.TrimSpace(ipv4InNamePattern.ReplaceAllString(name, ""))
+	name = strings.Trim(name, " -_|:()[]{}#@")
+	name = strings.Join(strings.Fields(name), " ")
+	if name == "" {
+		return fallback
+	}
+	return name
 }
 
 func countryFlagAndName(code string) (string, string) {

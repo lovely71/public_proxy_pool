@@ -31,6 +31,10 @@ func (pq *priorityQueue) Pop() (Task, bool) {
 	return it.task, true
 }
 
+func (pq *priorityQueue) Len() int {
+	return pq.h.Len()
+}
+
 type taskHeap []pqItem
 
 func (h taskHeap) Len() int { return len(h) }
@@ -55,4 +59,3 @@ func (h *taskHeap) Pop() any {
 	*h = old[:n-1]
 	return it
 }
-

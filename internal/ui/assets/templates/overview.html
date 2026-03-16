@@ -105,6 +105,52 @@
         </div>
       </div>
 
+      <div class="split split-balanced">
+        <div class="section-card">
+          <div class="section-head">
+            <div>
+              <h2 class="section-title">服务器配置与状态</h2>
+              <p class="section-desc">把当前机器、进程、SQLite 和校验器状态直接放到首页，方便判断这台机子是不是按预期在跑。</p>
+            </div>
+          </div>
+          <div class="config-grid">
+            {{range .ServerItems}}
+              <div class="config-card">
+                <div class="config-label">{{.Label}}</div>
+                {{if .Badge}}
+                  <span class="pill {{.Tone}}">{{.Value}}</span>
+                {{else}}
+                  <div class="config-value {{if .Mono}}mono{{end}} {{if .Tone}}tone-{{.Tone}}{{end}}">{{.Value}}</div>
+                {{end}}
+                <div class="config-hint">{{.Hint}}</div>
+              </div>
+            {{end}}
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-head">
+            <div>
+              <h2 class="section-title">刷新与调度参数</h2>
+              <p class="section-desc">这里显示当前抓取、校验、统计和 SSE 刷新的关键参数，用来快速确认部署参数有没有生效。</p>
+            </div>
+          </div>
+          <div class="config-grid">
+            {{range .RefreshItems}}
+              <div class="config-card">
+                <div class="config-label">{{.Label}}</div>
+                {{if .Badge}}
+                  <span class="pill {{.Tone}}">{{.Value}}</span>
+                {{else}}
+                  <div class="config-value {{if .Mono}}mono{{end}} {{if .Tone}}tone-{{.Tone}}{{end}}">{{.Value}}</div>
+                {{end}}
+                <div class="config-hint">{{.Hint}}</div>
+              </div>
+            {{end}}
+          </div>
+        </div>
+      </div>
+
       <div class="split">
         <div class="section-card">
           <div class="section-head">
