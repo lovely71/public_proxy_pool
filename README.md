@@ -1,61 +1,58 @@
 # public_proxy_pool
 
-一个基于 Go 的公共代理聚合服务，支持抓取、检测、评分、多格式订阅导出、中文 Web UI、Docker 部署，以及通过 GitHub Actions 自动构建 Docker 镜像。
+[![docker-image](https://github.com/lovely71/public_proxy_pool/actions/workflows/docker-image.yml/badge.svg)](https://github.com/lovely71/public_proxy_pool/actions/workflows/docker-image.yml)
 
-## 功能概览
+`public_proxy_pool` 是一个基于 Go 的公共代理聚合服务：从多个公开代理源与订阅源抓取节点，统一入库、验活、评分，并导出 `JSON`、`plain`、`Clash`、`V2Ray` 等格式，同时提供中文 Web UI 方便查看与管理。
 
-- 聚合公共代理源与订阅源，统一入库
-- 对节点做有效性、延迟、国家、纯净度等检测
-- 导出 `JSON`、`plain`、`Clash`、`V2Ray` 等格式
-- 内置中文 Web 管理后台，支持手机和桌面自适应
-- 支持 `SQLite`、Docker、GitHub Actions 构建镜像
+适合这些场景：
 
-## 目录说明
+- 需要长期聚合公开代理并持续去重、检测、筛选
+- 需要把节点直接导出给脚本、服务或代理客户端使用
+- 需要一个带中文后台的轻量代理池，而不是维护一套重型平台
+- 需要在 `1c1g` 到 `4c4g+` 的 VPS 上快速部署
 
-- `cmd/proxypool`：主程序入口
-- `internal/`：核心业务代码
-- `scripts/run_light.sh`：适合 `1c1g` 机器的轻量启动脚本
-- `docker-compose.yml`：容器部署示例
-- `.github/workflows/docker-image.yml`：GitHub Actions Docker 镜像构建流程
+## 亮点
 
-## 配置准备
+- 基于 Go + SQLite，部署简单，依赖少
+- 支持抓取文本源、订阅源，以及可选 `NodeMaven` 数据源
+- 支持有效性、延迟、国家、匿名度、纯净度等信息检测
+- 内置中文 Web UI，适配手机、平板和桌面
+- 支持 `JSON`、`plain`、`Clash`、`V2Ray` 多格式导出
+- 内置 Oracle Cloud Ubuntu 一键部署脚本
+- 推送到 `main` 后可自动构建并发布 Docker 镜像到 `GHCR`
 
-推荐先复制环境变量模板：
+## 快速开始
 
-```bash
-cp .env.example .env
-```
+### 方式一：Oracle Cloud Ubuntu 一键部署
 
-最少需要配置：
+适合全新 Ubuntu 主机，脚本会自动安装 Docker、生成部署目录、拉取镜像并启动服务。
 
-```bash
-API_KEYS=replace-with-a-strong-token
-HTTP_ADDR=:38482
-SQLITE_PATH=./data/proxypool.db
-```
-
-说明：
-
-- `API_KEYS`：后台和 API 鉴权 token，可写多个，逗号分隔
-- `HTTP_ADDR`：监听端口，建议用不常用高位端口，例如 `:38482`
-- `SQLITE_PATH`：SQLite 数据文件路径
-- `.env` 已加入 `.gitignore`，不会被提交
-
-## 部署流程
-
-### 方案一：本机轻量部署
-
-适合单机、开发机、`1c1g` 云主机直接运行。
-
-1. 准备环境
+`4c4g` 机器推荐直接用下面这条：
 
 ```bash
-go version
+curl -fsSL https://raw.githubusercontent.com/lovely71/public_proxy_pool/main/scripts/deploy_oracle_ubuntu.sh -o /tmp/deploy_oracle_ubuntu.sh && \
+sudo HOST_PORT=7171 API_KEY=bailu PUBLIC_BASE_URL=http://YOUR_SERVER_IP:7171 \
+FETCH_PROFILE=full SQLITE_MAX_OPEN_CONNS=8 SQLITE_BUSY_TIMEOUT=20s STATS_QUERY_TIMEOUT=3s \
+bash /tmp/deploy_oracle_ubuntu.sh
 ```
 
-建议使用项目 `go.mod` 对应的 Go 版本。
+部署完成后：
 
-2. 配置 `.env`
+- Web 后台：`http://YOUR_SERVER_IP:7171/ui/overview?token=bailu`
+- 统计接口：`curl -H 'X-API-Key: bailu' 'http://YOUR_SERVER_IP:7171/api/v1/stats'`
+
+如果你是小规格机器，建议改成：
+
+```bash
+sudo HOST_PORT=7171 API_KEY=bailu PUBLIC_BASE_URL=http://YOUR_SERVER_IP:7171 \
+FETCH_PROFILE=lite bash /tmp/deploy_oracle_ubuntu.sh
+```
+
+### 方式二：Docker Compose
+
+适合本地开发或服务器长期运行。
+
+1. 准备配置
 
 ```bash
 cp .env.example .env
@@ -65,148 +62,177 @@ cp .env.example .env
 
 ```bash
 API_KEYS=your-token
-HTTP_ADDR=:38482
+HTTP_ADDR=:8080
 SQLITE_PATH=./data/proxypool.db
 ```
 
-3. 启动服务
-
-```bash
-./scripts/run_light.sh
-```
-
-这个脚本默认会：
-
-- 自动读取根目录 `.env`
-- 限制抓取和验证并发，适合小内存机器
-- 默认关闭高开销的 `NodeMaven` 和纯净度外部查询
-
-4. 验证服务
-
-```bash
-curl http://127.0.0.1:38482/healthz
-curl -H 'X-API-Key: your-token' 'http://127.0.0.1:38482/api/v1/stats'
-```
-
-5. 访问后台
-
-浏览器访问时要带 `token`：
-
-```text
-http://127.0.0.1:38482/ui/overview?token=your-token
-```
-
-原因是浏览器地址栏不会自动携带 `X-API-Key` 请求头。
-
-### 方案二：Docker Compose 部署
-
-适合服务器长期运行。
-
-1. 准备 `.env`
-
-```bash
-cp .env.example .env
-```
-
-建议最少配置：
-
-```bash
-API_KEYS=your-token
-HTTP_ADDR=:8080
-```
-
-默认推荐直接使用已经发布的公共镜像：
-
-```text
-ghcr.io/lovely71/public_proxy_pool:latest
-```
-
-如果你要暴露成不常用端口，直接改 compose 的端口映射，例如：
-
-```yaml
-ports:
-  - "38482:8080"
-```
-
-2. 启动容器
-
-如果 `docker-compose.yml` 使用公共镜像：
-
-```yaml
-services:
-  proxypool:
-    image: ghcr.io/lovely71/public_proxy_pool:latest
-    container_name: proxypool
-    restart: unless-stopped
-    ports:
-      - "38482:8080"
-    environment:
-      - API_KEYS=${API_KEYS}
-      - AUTO_FETCH_ENABLED=true
-      - AUTO_VALIDATE_ENABLED=true
-    volumes:
-      - ./data:/data
-```
-
-先拉镜像，再启动：
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-如果你想在本地基于源码重新构建，再使用：
+2. 启动
 
 ```bash
 docker compose up -d --build
 ```
 
-3. 查看日志
+3. 验证
 
 ```bash
-docker compose logs -f proxypool
+curl http://127.0.0.1:8080/healthz
+curl -H 'X-API-Key: your-token' 'http://127.0.0.1:8080/api/v1/stats'
 ```
 
-4. 验证服务
+### 方式三：本地轻量运行
+
+适合 `1c1g`、开发调试或不想走 Docker 的场景。
 
 ```bash
-curl http://127.0.0.1:38482/healthz
-curl -H 'X-API-Key: your-token' 'http://127.0.0.1:38482/api/v1/stats'
+cp .env.example .env
+./scripts/run_light.sh
 ```
 
-5. 数据目录
+这个脚本会自动读取根目录 `.env`，并采用更保守的抓取与校验参数。
 
-默认数据挂载在：
+## 访问方式
+
+### 浏览器访问后台
+
+浏览器地址栏不会自动带 `X-API-Key` 请求头，所以 Web UI 需要把 token 放进 URL：
 
 ```text
-./data
+http://127.0.0.1:8080/ui/overview?token=your-token
 ```
 
-如果你启用离线 GeoIP，也可以额外挂载：
+### 脚本访问 API
+
+更推荐使用请求头：
+
+```bash
+curl -H 'X-API-Key: your-token' 'http://127.0.0.1:8080/api/v1/stats'
+curl -H 'X-API-Key: your-token' 'http://127.0.0.1:8080/api/v1/nodes?verify=1&limit=20'
+```
+
+### 订阅导出
+
+```bash
+curl -H 'X-API-Key: your-token' 'http://127.0.0.1:8080/sub/plain?verify=1&limit=50'
+curl -H 'X-API-Key: your-token' 'http://127.0.0.1:8080/sub/clash?verify=1&limit=200'
+curl -H 'X-API-Key: your-token' 'http://127.0.0.1:8080/sub/v2ray?verify=1&limit=200'
+```
+
+如果你要直接给客户端导入，也可以用 `?token=` 形式：
 
 ```text
-./geoip:/geoip:ro
+http://127.0.0.1:8080/sub/clash?verify=1&limit=200&token=your-token
 ```
 
-### 方案三：使用 GitHub Actions 自动构建镜像
+## 部署方式对比
 
-仓库内置了：
+| 方式 | 适合场景 | 特点 |
+| --- | --- | --- |
+| Oracle 一键脚本 | 全新 Ubuntu / Oracle Cloud | 自动装 Docker、拉镜像、生成配置，最快上手 |
+| Docker Compose | 本地开发 / 服务器长期运行 | 配置清晰，便于管理挂载目录与重启 |
+| 本地轻量运行 | 小内存机器 / 调试 | 不依赖容器，参数更保守 |
 
-- [.github/workflows/docker-image.yml](.github/workflows/docker-image.yml)
+## Oracle Cloud 一键部署说明
+
+仓库内置脚本：[`scripts/deploy_oracle_ubuntu.sh`](scripts/deploy_oracle_ubuntu.sh)
+
+它会自动：
+
+- 安装 Docker 和 Docker Compose
+- 创建 `/opt/public_proxy_pool`
+- 生成 `.env` 与 `docker-compose.yml`
+- 拉取 `ghcr.io/lovely71/public_proxy_pool:latest`
+- 做健康检查并输出后台地址
+
+常见用法：
+
+```bash
+sudo bash scripts/deploy_oracle_ubuntu.sh
+```
+
+自定义端口和 token：
+
+```bash
+sudo HOST_PORT=38482 API_KEY='your-strong-token' PUBLIC_BASE_URL='http://YOUR_SERVER_IP:38482' \
+  bash scripts/deploy_oracle_ubuntu.sh
+```
+
+通过 SSH 远程执行：
+
+```bash
+ssh ubuntu@YOUR_SERVER_IP \
+  "sudo env HOST_PORT=7171 API_KEY=bailu PUBLIC_BASE_URL=http://YOUR_SERVER_IP:7171 FETCH_PROFILE=full bash -s" \
+  < scripts/deploy_oracle_ubuntu.sh
+```
+
+额外注意：
+
+- Oracle 控制台里的 `Security List` 或 `NSG` 仍然需要手动放行入站 `TCP/端口`
+- 如果主机启用了 `ufw`，脚本会自动尝试放行该端口
+- 若后续手动改了 `/opt/public_proxy_pool/.env`，执行 `docker compose up -d` 即可让配置生效
+
+## 常用环境变量
+
+| 变量 | 说明 | 常见值 |
+| --- | --- | --- |
+| `API_KEYS` | API 与后台鉴权 token，支持多个值，逗号分隔 | `token-a,token-b` |
+| `HTTP_ADDR` | 服务监听地址 | `:8080` |
+| `PUBLIC_BASE_URL` | 对外可访问地址，用于 `/probe/echo` 与匿名度探测 | `http://IP:8080` |
+| `SQLITE_PATH` | SQLite 数据文件路径 | `./data/proxypool.db` |
+| `SQLITE_MAX_OPEN_CONNS` | SQLite 最大连接数，适合多核机器提升读并发 | `2` 到 `8` |
+| `SQLITE_BUSY_TIMEOUT` | SQLite 锁等待超时 | `10s`、`15s`、`20s` |
+| `STATS_QUERY_TIMEOUT` | `/api/v1/stats` 与 UI 统计查询超时 | `2s`、`3s` |
+| `AUTO_FETCH_ENABLED` | 是否自动抓取 | `true` / `false` |
+| `AUTO_VALIDATE_ENABLED` | 是否自动校验 | `true` / `false` |
+| `FETCH_PROFILE` | 部署脚本使用的抓取参数档位 | `lite` / `full` / `custom` |
+| `SOURCE_INTERVAL_SEC` | 统一覆盖启用源抓取间隔 | `60`、`1800` |
+
+完整配置可参考：
+
+- [`.env.example`](.env.example)
+- [`internal/config/config.go`](internal/config/config.go)
+
+## 抓取模式
+
+部署脚本支持以下档位：
+
+- `FETCH_PROFILE=lite`：适合 `1c1g` 或希望更稳更省资源的机器
+- `FETCH_PROFILE=full`：默认档位，会按 CPU 核数自动提高抓取与校验强度
+- `FETCH_PROFILE=aggressive`：`full` 的兼容别名
+- `FETCH_PROFILE=custom`：完全手动控制各项参数
+
+`full` 模式下的大致建议：
+
+- `1c`：优先稳态，不追求极限抓取速度
+- `2c`：可进入更高并发稳态
+- `4c+`：建议配合 `SQLITE_MAX_OPEN_CONNS=8`、`SQLITE_BUSY_TIMEOUT=20s`
+
+如果你希望强行覆盖默认策略，也可以直接在环境变量里设置：
+
+- `FETCH_TICK_INTERVAL`
+- `FETCH_MAX_PER_TICK`
+- `SOURCE_WORKERS`
+- `VALIDATE_WORKERS`
+- `SOURCE_SAMPLE_VALIDATE`
+- `MIN_FRESH_POOL_SIZE`
+- `STARTUP_WARMUP_*`
+
+## GitHub Actions 与镜像
+
+仓库内置工作流：[`.github/workflows/docker-image.yml`](.github/workflows/docker-image.yml)
 
 触发规则：
 
-- 推送到 `main` 时构建镜像
-- 推送 `v*` 标签时构建并打版本标签
-- `pull_request -> main` 时仅构建校验，不推送
+- 推送到 `main`：构建并推送镜像
+- 推送 `v*` 标签：构建并打版本标签
+- `pull_request -> main`：只做构建校验，不推送
 
-镜像当前默认推送到：
+默认镜像地址：
 
 ```text
 ghcr.io/lovely71/public_proxy_pool
 ```
 
-常用标签建议：
+常用标签：
 
 ```text
 ghcr.io/lovely71/public_proxy_pool:latest
@@ -214,79 +240,19 @@ ghcr.io/lovely71/public_proxy_pool:main
 ghcr.io/lovely71/public_proxy_pool:sha-<commit>
 ```
 
-如果你已经把仓库推到 GitHub，后续可以直接在服务器上拉镜像部署：
+## 项目结构
 
-```bash
-docker pull ghcr.io/lovely71/public_proxy_pool:latest
-docker run -d \
-  --name proxypool \
-  -p 38482:8080 \
-  -e API_KEYS=your-token \
-  -v $(pwd)/data:/data \
-  ghcr.io/lovely71/public_proxy_pool:latest
-```
+- `cmd/proxypool`：程序入口
+- `internal/`：核心业务代码
+- `internal/ui/`：中文 Web UI
+- `scripts/run_light.sh`：轻量启动脚本
+- `scripts/deploy_oracle_ubuntu.sh`：Oracle Ubuntu 一键部署脚本
+- `docker-compose.yml`：Compose 示例
+- `.github/workflows/docker-image.yml`：镜像构建工作流
 
-## 部署后检查清单
+## 开发与测试
 
-上线后建议按这个顺序检查：
-
-1. 健康检查是否正常
-
-```bash
-curl http://127.0.0.1:38482/healthz
-curl http://127.0.0.1:38482/readyz
-```
-
-2. 鉴权是否生效
-
-```bash
-curl -i http://127.0.0.1:38482/api/v1/stats
-curl -i -H 'X-API-Key: your-token' http://127.0.0.1:38482/api/v1/stats
-```
-
-3. 后台是否可访问
-
-```text
-http://127.0.0.1:38482/ui/overview?token=your-token
-```
-
-4. 订阅是否能返回内容
-
-```bash
-curl -H 'X-API-Key: your-token' 'http://127.0.0.1:38482/sub/clash?verify=1&limit=10'
-curl -H 'X-API-Key: your-token' 'http://127.0.0.1:38482/sub/v2ray?verify=1&limit=10'
-```
-
-## 常用环境变量
-
-- `HTTP_ADDR`：监听地址，例如 `:38482`
-- `SQLITE_PATH`：SQLite 文件路径
-- `SQLITE_MAX_OPEN_CONNS`：SQLite 最大连接数，`WAL` 模式下建议 `2-8`
-- `SQLITE_BUSY_TIMEOUT`：SQLite 锁等待超时，例如 `15s`
-- `STATS_QUERY_TIMEOUT`：概览页和 `/api/v1/stats` 的统计查询超时，例如 `3s`
-- `API_KEYS`：鉴权 token，多个值用逗号分隔
-- `PUBLIC_BASE_URL`：用于 `/probe/echo` 与匿名度检测
-- `AUTO_FETCH_ENABLED`：是否自动抓取
-- `AUTO_VALIDATE_ENABLED`：是否自动检测
-- `GEOIP_COUNTRY_MMDB`：国家 GeoIP 数据库路径
-- `GEOIP_ASN_MMDB`：ASN GeoIP 数据库路径
-- `V2RAY_VALIDATE_MODE`：`tcp` 或 `sing-box`
-- `SING_BOX_PATH`：`sing-box` 可执行文件路径
-
-完整变量可参考：
-
-- [.env.example](.env.example)
-- [internal/config/config.go](internal/config/config.go)
-
-## 常用命令
-
-本机运行：
-
-```bash
-./scripts/run_light.sh
-```
-
-测试：
+运行测试：
 
 ```bash
 go test ./...
@@ -298,148 +264,34 @@ go test ./...
 bash scripts/smoke.sh
 ```
 
-Docker 部署：
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-源码重新构建 Docker：
+本地重新构建容器：
 
 ```bash
 docker compose up -d --build
 ```
 
-## Oracle Cloud Ubuntu 一键部署
+## 常见问题
 
-如果你是在一台全新的 Oracle Cloud Ubuntu 主机上部署，最省事的方式是直接跑仓库里的自动部署脚本。脚本会自动：
+### 为什么浏览器打开 UI 会提示未授权？
 
-- 安装 Docker 和 Docker Compose
-- 创建 `/opt/public_proxy_pool`
-- 生成 `.env` 和 `docker-compose.yml`
-- 拉取公共镜像 `ghcr.io/lovely71/public_proxy_pool:latest`
-- 默认以全速模式启动服务
-- 做健康检查并输出后台访问地址
-
-### 用法一：先把仓库传上服务器再执行
-
-```bash
-sudo bash scripts/deploy_oracle_ubuntu.sh
-```
-
-如果你想自定义端口或 token：
-
-```bash
-sudo HOST_PORT=38482 API_KEY='your-strong-token' PUBLIC_BASE_URL='http://YOUR_SERVER_IP:38482' \
-  bash scripts/deploy_oracle_ubuntu.sh
-```
-
-脚本默认就是全速模式。如果你想显式指定，例如 `50` 并发抓取并把所有源统一改成每 `60` 秒轮询一次：
-
-```bash
-sudo HOST_PORT=7171 API_KEY=bailu PUBLIC_BASE_URL=http://YOUR_SERVER_IP:7171 \
-  FETCH_PROFILE=full SOURCE_INTERVAL_SEC=60 \
-  bash scripts/deploy_oracle_ubuntu.sh
-```
-
-如果你是 `4c4g` 一类机器，想继续跑 `full`，同时放宽 SQLite 的读并发，也可以直接附带：
-
-```bash
-sudo HOST_PORT=7171 API_KEY=bailu PUBLIC_BASE_URL=http://YOUR_SERVER_IP:7171 \
-  FETCH_PROFILE=full SQLITE_MAX_OPEN_CONNS=8 SQLITE_BUSY_TIMEOUT=20s \
-  bash scripts/deploy_oracle_ubuntu.sh
-```
-
-### 用法二：本地直接通过 SSH 远程执行
-
-```bash
-ssh ubuntu@YOUR_SERVER_IP 'sudo bash -s' < scripts/deploy_oracle_ubuntu.sh
-```
-
-带自定义参数的例子：
-
-```bash
-ssh ubuntu@YOUR_SERVER_IP \
-  "sudo env HOST_PORT=38482 API_KEY='your-strong-token' bash -s" \
-  < scripts/deploy_oracle_ubuntu.sh
-```
-
-带高抓取并发模式的远程一键部署例子：
-
-```bash
-ssh ubuntu@YOUR_SERVER_IP \
-  "sudo env HOST_PORT=7171 API_KEY=bailu PUBLIC_BASE_URL=http://YOUR_SERVER_IP:7171 FETCH_PROFILE=full SOURCE_INTERVAL_SEC=60 bash -s" \
-  < scripts/deploy_oracle_ubuntu.sh
-```
-
-部署完成后，脚本会输出：
-
-- 本机检查命令
-- API Token
-- Web 后台地址：`http://公网IP:端口/ui/overview?token=你的token`
-
-### Oracle Cloud 额外注意事项
-
-脚本只能处理主机内部环境，Oracle 云控制台里的网络策略还需要你手动放行：
-
-- 在实例所在子网的 `Security List` 或绑定的 `NSG` 中，放行入站 `TCP/你的端口`
-- 如果主机自己启用了 `ufw`，脚本会自动尝试放行该端口
-
-脚本默认使用全速参数。如果你想进一步手动调高或切回轻量模式，可以直接修改服务器上的：
+因为浏览器地址栏不会自动带 `X-API-Key`，需要改成：
 
 ```text
-/opt/public_proxy_pool/.env
+/ui/overview?token=your-token
 ```
 
-然后执行：
+### 为什么 `/ui/events` 会一直是 pending？
+
+这是 Web UI 的实时事件流连接，属于正常长连接行为；只要概览页主体能正常打开、数字会刷新，就不是故障。
+
+### 为什么新机器上 `full` 模式下首页会比较慢？
+
+`full` 模式下抓取和校验更积极，如果机器核数高、抓取源多，建议一起设置：
 
 ```bash
-cd /opt/public_proxy_pool
-docker compose up -d
+SQLITE_MAX_OPEN_CONNS=8
+SQLITE_BUSY_TIMEOUT=20s
+STATS_QUERY_TIMEOUT=3s
 ```
 
-### 抓取模式说明
-
-脚本现在支持以下部署模式：
-
-- `FETCH_PROFILE=full`：默认值；在 `1C1G` 上会走长期稳态安全档，在更高配置机器上会逐步进入更高并发稳态；默认把所有启用源统一调整为 `1800` 秒轮询
-- `FETCH_PROFILE=aggressive`：`full` 的兼容别名
-- `FETCH_PROFILE=lite`：适合小规格机器，抓取和验证都比较保守
-- `FETCH_PROFILE=custom`：不套用预设，你可以完全通过环境变量手动指定各项参数
-
-`full` 模式会按机器核数自动调整强度：
-
-- `1C`：走长期稳态安全档，优先避免 CPU 打满
-- `2C`：短预热后进入更高并发稳态
-- `4C+`：短预热后进入满血稳态
-
-如果你希望“几乎不停抓取”，默认的 `FETCH_PROFILE=full` 已经会配合：
-
-- `SOURCE_INTERVAL_SEC=1800`：部署完成后，把数据库里所有启用源的抓取间隔统一改成 `1800` 秒，也就是 `30` 分钟
-- `INGEST_MAX_PER_SOURCE=0`：不限制每个源的入库上限，尽量保留所有抓到的节点
-
-说明：
-
-- `1C` 机器的 `full` 模式会用更保守的长期参数：
-  `SOURCE_WORKERS=3`
-  `VALIDATE_WORKERS=3`
-  `FETCH_TICK_INTERVAL=5s`
-  `FETCH_MAX_PER_TICK=500`
-  `SOURCE_SAMPLE_VALIDATE=0`
-  `MIN_FRESH_POOL_SIZE=300`
-  `FRESH_WITHIN_DEFAULT=1h`
-- 这样会抓得更慢，但更适合 `1C1G` 长期运行，不容易把 VPS 顶死
-- 这里的 `300` 指的是“近 `1` 小时内校验通过的可用节点”目标，而不是“近 `5` 分钟 fresh 节点 300 个”
-- `2C+` 机器仍然会逐步恢复到更高并发
-- 当前仓库内置了完整 fallback 默认源集合，即使部署环境里没有参考 `service.py`，也会自动种下全部内置默认源
-- 仅把 `SOURCE_WORKERS` 调高还不够，因为每个源自身还有独立抓取间隔
-- 如果你想手工覆盖预热策略，可以设置：
-  `STARTUP_WARMUP_DURATION`
-  `STARTUP_WARMUP_FETCH_TICK_INTERVAL`
-  `STARTUP_WARMUP_FETCH_MAX_PER_TICK`
-  `STARTUP_WARMUP_SOURCE_WORKERS`
-  `STARTUP_WARMUP_VALIDATE_WORKERS`
-  `STARTUP_WARMUP_SOURCE_SAMPLE_VALIDATE`
-  `STARTUP_WARMUP_MIN_FRESH_POOL_SIZE`
-- `SOURCE_INTERVAL_SEC` 会在部署后直接更新 SQLite 里的 `interval_sec` 和 `next_fetch_at`
+这样可以明显改善统计页和 `/api/v1/stats` 的响应表现。
