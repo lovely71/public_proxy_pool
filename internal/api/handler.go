@@ -79,6 +79,19 @@ func NewHandler(st *store.Store, val *validator.Validator, cfg *config.Config) *
 	return &Handler{st: st, val: val, cfg: cfg, limiter: limiter}
 }
 
+func (h *Handler) statsContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if h.cfg == nil || h.cfg.StatsQueryTimeout <= 0 {
+		return parent, func() {}
+	}
+	return context.WithTimeout(parent, h.cfg.StatsQueryTimeout)
+}
+
+func (h *Handler) loadStats(parent context.Context, now time.Time) (*store.Stats, error) {
+	ctx, cancel := h.statsContext(parent)
+	defer cancel()
+	return h.st.GetStats(ctx, now, h.cfg.FreshWithinDefault)
+}
+
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
 
@@ -237,7 +250,7 @@ func (h *Handler) randomNode(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	stats, err := h.st.GetStats(r.Context(), now, h.cfg.FreshWithinDefault)
+	stats, err := h.loadStats(r.Context(), now)
 	if err != nil {
 		http.Error(w, "stats failed", http.StatusInternalServerError)
 		return
@@ -427,7 +440,7 @@ func (h *Handler) syncVerify(ctx context.Context, filter parsedFilter, freshWith
 
 func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	stats, err := h.st.GetStats(r.Context(), now, h.cfg.FreshWithinDefault)
+	stats, err := h.loadStats(r.Context(), now)
 	if err != nil {
 		http.Error(w, "stats failed", http.StatusInternalServerError)
 		return

@@ -261,6 +261,9 @@ curl -H 'X-API-Key: your-token' 'http://127.0.0.1:38482/sub/v2ray?verify=1&limit
 
 - `HTTP_ADDR`：监听地址，例如 `:38482`
 - `SQLITE_PATH`：SQLite 文件路径
+- `SQLITE_MAX_OPEN_CONNS`：SQLite 最大连接数，`WAL` 模式下建议 `2-8`
+- `SQLITE_BUSY_TIMEOUT`：SQLite 锁等待超时，例如 `15s`
+- `STATS_QUERY_TIMEOUT`：概览页和 `/api/v1/stats` 的统计查询超时，例如 `3s`
 - `API_KEYS`：鉴权 token，多个值用逗号分隔
 - `PUBLIC_BASE_URL`：用于 `/probe/echo` 与匿名度检测
 - `AUTO_FETCH_ENABLED`：是否自动抓取
@@ -337,6 +340,14 @@ sudo HOST_PORT=38482 API_KEY='your-strong-token' PUBLIC_BASE_URL='http://YOUR_SE
 ```bash
 sudo HOST_PORT=7171 API_KEY=bailu PUBLIC_BASE_URL=http://YOUR_SERVER_IP:7171 \
   FETCH_PROFILE=full SOURCE_INTERVAL_SEC=60 \
+  bash scripts/deploy_oracle_ubuntu.sh
+```
+
+如果你是 `4c4g` 一类机器，想继续跑 `full`，同时放宽 SQLite 的读并发，也可以直接附带：
+
+```bash
+sudo HOST_PORT=7171 API_KEY=bailu PUBLIC_BASE_URL=http://YOUR_SERVER_IP:7171 \
+  FETCH_PROFILE=full SQLITE_MAX_OPEN_CONNS=8 SQLITE_BUSY_TIMEOUT=20s \
   bash scripts/deploy_oracle_ubuntu.sh
 ```
 

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -140,9 +141,22 @@ type viewData struct {
 	APIKeysOn bool
 }
 
+func (h *Handler) statsContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if h.cfg == nil || h.cfg.StatsQueryTimeout <= 0 {
+		return parent, func() {}
+	}
+	return context.WithTimeout(parent, h.cfg.StatsQueryTimeout)
+}
+
+func (h *Handler) loadStats(parent context.Context, now time.Time) (*store.Stats, error) {
+	ctx, cancel := h.statsContext(parent)
+	defer cancel()
+	return h.st.GetStats(ctx, now, h.cfg.FreshWithinDefault)
+}
+
 func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	stats, err := h.st.GetStats(r.Context(), now, h.cfg.FreshWithinDefault)
+	stats, err := h.loadStats(r.Context(), now)
 	if err != nil {
 		http.Error(w, "读取统计数据失败", http.StatusInternalServerError)
 		return
@@ -159,7 +173,7 @@ func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) sources(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	stats, _ := h.st.GetStats(r.Context(), now, h.cfg.FreshWithinDefault)
+	stats, _ := h.loadStats(r.Context(), now)
 	items, err := h.st.ListSources(r.Context())
 	if err != nil {
 		http.Error(w, "读取抓取源列表失败", http.StatusInternalServerError)
@@ -264,7 +278,7 @@ func (h *Handler) addSource(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	stats, _ := h.st.GetStats(r.Context(), now, h.cfg.FreshWithinDefault)
+	stats, _ := h.loadStats(r.Context(), now)
 
 	limit := int(parseInt64(r.URL.Query().Get("limit")))
 	if limit <= 0 {
@@ -347,7 +361,7 @@ func (h *Handler) unbanNode(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) apiDocs(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	stats, _ := h.st.GetStats(r.Context(), now, h.cfg.FreshWithinDefault)
+	stats, _ := h.loadStats(r.Context(), now)
 	h.render(w, r, "api.html", viewData{
 		Now:       now,
 		Title:     "接口帮助",
@@ -360,7 +374,7 @@ func (h *Handler) apiDocs(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) subBuilder(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	stats, _ := h.st.GetStats(r.Context(), now, h.cfg.FreshWithinDefault)
+	stats, _ := h.loadStats(r.Context(), now)
 	h.render(w, r, "sub.html", viewData{
 		Now:       now,
 		Title:     "订阅生成",
@@ -391,7 +405,7 @@ func (h *Handler) events(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-ticker.C:
 			now := time.Now()
-			stats, err := h.st.GetStats(r.Context(), now, h.cfg.FreshWithinDefault)
+			stats, err := h.loadStats(r.Context(), now)
 			if err != nil {
 				continue
 			}

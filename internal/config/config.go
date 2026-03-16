@@ -11,14 +11,17 @@ type Config struct {
 	HTTPAddr      string
 	PublicBaseURL string
 
-	SQLitePath string
+	SQLitePath         string
+	SQLiteMaxOpenConns int
+	SQLiteBusyTimeout  time.Duration
 
 	GeoIPCountryMMDB string
 	GeoIPASNMMDB     string
 
-	APIKeys        []string
-	RateLimitRPS   float64
-	RateLimitBurst int
+	APIKeys           []string
+	RateLimitRPS      float64
+	RateLimitBurst    int
+	StatsQueryTimeout time.Duration
 
 	AutoFetchEnabled    bool
 	AutoValidateEnabled bool
@@ -82,14 +85,17 @@ type StartupWarmupConfig struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		HTTPAddr:         envString("HTTP_ADDR", ":8080"),
-		PublicBaseURL:    strings.TrimRight(envString("PUBLIC_BASE_URL", ""), "/"),
-		SQLitePath:       envString("SQLITE_PATH", "./data/proxypool.db"),
-		GeoIPCountryMMDB: envString("GEOIP_COUNTRY_MMDB", ""),
-		GeoIPASNMMDB:     envString("GEOIP_ASN_MMDB", ""),
-		APIKeys:          splitCSV(envString("API_KEYS", "")),
-		RateLimitRPS:     envFloat("RATE_LIMIT_RPS", 0),
-		RateLimitBurst:   envInt("RATE_LIMIT_BURST", 0),
+		HTTPAddr:           envString("HTTP_ADDR", ":8080"),
+		PublicBaseURL:      strings.TrimRight(envString("PUBLIC_BASE_URL", ""), "/"),
+		SQLitePath:         envString("SQLITE_PATH", "./data/proxypool.db"),
+		SQLiteMaxOpenConns: envInt("SQLITE_MAX_OPEN_CONNS", 4),
+		SQLiteBusyTimeout:  envDuration("SQLITE_BUSY_TIMEOUT", 15*time.Second),
+		GeoIPCountryMMDB:   envString("GEOIP_COUNTRY_MMDB", ""),
+		GeoIPASNMMDB:       envString("GEOIP_ASN_MMDB", ""),
+		APIKeys:            splitCSV(envString("API_KEYS", "")),
+		RateLimitRPS:       envFloat("RATE_LIMIT_RPS", 0),
+		RateLimitBurst:     envInt("RATE_LIMIT_BURST", 0),
+		StatsQueryTimeout:  envDuration("STATS_QUERY_TIMEOUT", 3*time.Second),
 
 		AutoFetchEnabled:    envBool("AUTO_FETCH_ENABLED", true),
 		AutoValidateEnabled: envBool("AUTO_VALIDATE_ENABLED", true),

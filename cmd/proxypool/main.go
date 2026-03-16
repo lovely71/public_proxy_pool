@@ -30,7 +30,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	st, err := store.Open(cfg.SQLitePath)
+	st, err := store.OpenWithOptions(cfg.SQLitePath, store.OpenOptions{
+		MaxOpenConns: cfg.SQLiteMaxOpenConns,
+		BusyTimeout:  cfg.SQLiteBusyTimeout,
+	})
 	if err != nil {
 		logger.Error("open sqlite failed", "error", err)
 		os.Exit(1)
