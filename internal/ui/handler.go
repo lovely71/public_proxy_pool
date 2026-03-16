@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -35,8 +34,9 @@ type Handler struct {
 
 	tpl *template.Template
 
-	limiter   *ratelimit.Limiter
-	startedAt time.Time
+	limiter    *ratelimit.Limiter
+	startedAt  time.Time
+	sysMetrics *systemMetrics
 }
 
 func NewHandler(st *store.Store, val *validator.Validator, cfg *config.Config) *Handler {
@@ -50,7 +50,15 @@ func NewHandler(st *store.Store, val *validator.Validator, cfg *config.Config) *
 	}
 	tpl := template.Must(template.New("ui").Funcs(funcMap).ParseFS(embeddedFS, "assets/templates/*.html"))
 	limiter := ratelimit.New(cfg.RateLimitRPS, cfg.RateLimitBurst)
-	return &Handler{st: st, val: val, cfg: cfg, tpl: tpl, limiter: limiter, startedAt: time.Now()}
+	return &Handler{
+		st:         st,
+		val:        val,
+		cfg:        cfg,
+		tpl:        tpl,
+		limiter:    limiter,
+		startedAt:  time.Now(),
+		sysMetrics: newSystemMetrics(),
+	}
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -172,6 +180,11 @@ func (h *Handler) loadStats(parent context.Context, now time.Time) (*store.Stats
 
 func (h *Handler) buildOverviewServerItems(now time.Time) []dashboardItem {
 	validatorSnap := h.val.Snapshot()
+	sysSnap := h.sysMetrics.Snapshot()
+	cpuValue := "采集中"
+	if sysSnap.cpuReady {
+		cpuValue = formatPercent(sysSnap.cpuUsage)
+	}
 
 	authValue, authTone := statusText(len(h.cfg.APIKeys) > 0, "已启用", "未启用")
 	rateLimitEnabled := h.cfg.RateLimitRPS > 0
@@ -200,14 +213,19 @@ func (h *Handler) buildOverviewServerItems(now time.Time) []dashboardItem {
 			Hint:  "按 UI handler 启动时间估算，页面刷新时会更新。",
 		},
 		{
-			Label: "CPU / 调度",
-			Value: fmt.Sprintf("%d CPU / GOMAXPROCS %d", runtime.NumCPU(), runtime.GOMAXPROCS(0)),
-			Hint:  "用于确认这台机器当前的 Go 调度并发。",
+			Label: "CPU 使用率",
+			Value: cpuValue,
+			Hint:  fmt.Sprintf("系统 %d CPU / GOMAXPROCS %d。首次打开如果显示未读取到，刷新后即可看到采样值。", runtime.NumCPU(), runtime.GOMAXPROCS(0)),
 		},
 		{
-			Label: "Go 运行时",
-			Value: fmt.Sprintf("%s / goroutine %d / pid %d", runtime.Version(), runtime.NumGoroutine(), os.Getpid()),
-			Hint:  "用于观察进程数量级和排查异常膨胀。",
+			Label: "内存使用率",
+			Value: formatMemoryUsage(sysSnap.memory, "未读取到"),
+			Hint:  "按 /proc/meminfo 的 MemTotal 与 MemAvailable 估算当前系统内存占用。",
+		},
+		{
+			Label: "Swap 使用率",
+			Value: formatMemoryUsage(sysSnap.swap, "未启用"),
+			Hint:  "如果这里持续偏高，通常说明机器内存压力已经比较明显。",
 		},
 		{
 			Label: "API 鉴权",
@@ -217,22 +235,16 @@ func (h *Handler) buildOverviewServerItems(now time.Time) []dashboardItem {
 			Badge: true,
 		},
 		{
+			Label: "SQLite 并发",
+			Value: fmt.Sprintf("%d 连接 / %s", h.cfg.SQLiteMaxOpenConns, formatDurationValue(h.cfg.SQLiteBusyTimeout, "默认")),
+			Hint:  "读并发与锁等待时间，4c4g 机器建议适当放宽。",
+		},
+		{
 			Label: "限流状态",
 			Value: rateValue,
 			Hint:  disabledOrValue(rateLimitEnabled, fmt.Sprintf("RPS %.1f / Burst %d", h.cfg.RateLimitRPS, h.cfg.RateLimitBurst), "当前未限制请求速率。"),
 			Tone:  rateTone,
 			Badge: true,
-		},
-		{
-			Label: "SQLite 路径",
-			Value: h.cfg.SQLitePath,
-			Hint:  "当前节点库与统计数据所在文件。",
-			Mono:  true,
-		},
-		{
-			Label: "SQLite 并发",
-			Value: fmt.Sprintf("%d 连接 / %s", h.cfg.SQLiteMaxOpenConns, formatDurationValue(h.cfg.SQLiteBusyTimeout, "默认")),
-			Hint:  "读并发与锁等待时间，4c4g 机器建议适当放宽。",
 		},
 		{
 			Label: "校验器状态",
