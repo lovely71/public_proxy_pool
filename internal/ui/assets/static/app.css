@@ -728,6 +728,10 @@ table.table-dense .table-actions button {
   font-size: 13px;
 }
 
+.node-test-note {
+  margin-bottom: 14px;
+}
+
 thead th {
   position: sticky;
   top: 0;
@@ -828,6 +832,32 @@ tbody tr:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.node-actions {
+  align-items: center;
+}
+
+.node-test-feedback {
+  margin-top: 8px;
+  min-height: 18px;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.node-test-feedback.is-loading {
+  color: var(--accent);
+}
+
+.node-test-feedback.is-ok {
+  color: var(--accent-green);
+}
+
+.node-test-feedback.is-bad {
+  color: var(--accent-red);
 }
 
 .footer-note {

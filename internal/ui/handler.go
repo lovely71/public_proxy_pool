@@ -86,6 +86,7 @@ func (h *Handler) Routes() http.Handler {
 		r.Get("/nodes", h.nodes)
 		r.Post("/nodes/{id}/ban", h.banNode)
 		r.Post("/nodes/{id}/unban", h.unbanNode)
+		r.Post("/nodes/{id}/test/google", h.testNodeGoogle)
 		r.Get("/api", h.apiDocs)
 		r.Get("/sub", h.subBuilder)
 		r.Get("/events", h.events)
@@ -146,18 +147,19 @@ func (h *Handler) static(w http.ResponseWriter, r *http.Request) {
 }
 
 type viewData struct {
-	Now          time.Time
-	Token        string
-	Title        string
-	Stats        *store.Stats
-	Sources      []store.Source
-	Nodes        []store.Node
-	Query        map[string]string
-	BaseURL      string
-	APIKeysOn    bool
-	SystemItems  []systemPanelItem
-	ServerItems  []dashboardItem
-	RefreshItems []dashboardItem
+	Now           time.Time
+	Token         string
+	Title         string
+	Stats         *store.Stats
+	Sources       []store.Source
+	Nodes         []store.Node
+	Query         map[string]string
+	BaseURL       string
+	APIKeysOn     bool
+	GoogleTestURL string
+	SystemItems   []systemPanelItem
+	ServerItems   []dashboardItem
+	RefreshItems  []dashboardItem
 }
 
 type dashboardItem struct {
@@ -584,14 +586,15 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		"limit":          r.URL.Query().Get("limit"),
 	}
 	h.render(w, r, "nodes.html", viewData{
-		Now:       now,
-		Title:     "节点池",
-		Stats:     stats,
-		Nodes:     nodes,
-		Query:     q,
-		Token:     r.URL.Query().Get("token"),
-		BaseURL:   h.cfg.PublicBaseURL,
-		APIKeysOn: len(h.cfg.APIKeys) > 0,
+		Now:           now,
+		Title:         "节点池",
+		Stats:         stats,
+		Nodes:         nodes,
+		Query:         q,
+		Token:         r.URL.Query().Get("token"),
+		BaseURL:       h.cfg.PublicBaseURL,
+		APIKeysOn:     len(h.cfg.APIKeys) > 0,
+		GoogleTestURL: validator.GoogleGenerate204URL,
 	})
 }
 
@@ -620,6 +623,42 @@ func (h *Handler) unbanNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/ui/nodes?token="+template.URLQueryEscaper(r.URL.Query().Get("token")), http.StatusFound)
+}
+
+func (h *Handler) testNodeGoogle(w http.ResponseWriter, r *http.Request) {
+	id := parseInt64(chi.URLParam(r, "id"))
+	if id <= 0 {
+		http.Error(w, "无效的节点 ID", http.StatusBadRequest)
+		return
+	}
+
+	timeout := h.cfg.ValidateTimeout + 5*time.Second
+	if timeout <= 0 {
+		timeout = 12 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	res, err := h.val.TestNodeGoogle(ctx, id)
+	if err != nil {
+		if err == store.ErrNotFound {
+			http.Error(w, "节点不存在", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Google 测试失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSONStatus(w, http.StatusOK, map[string]any{
+		"ok":              res.OK,
+		"target_url":      res.TargetURL,
+		"final_url":       res.FinalURL,
+		"http_status":     res.HTTPStatus,
+		"latency_ms":      res.LatencyMS,
+		"error":           res.Error,
+		"expected_status": http.StatusNoContent,
+		"tested_at":       time.Now().Unix(),
+	})
 }
 
 func (h *Handler) apiDocs(w http.ResponseWriter, r *http.Request) {
@@ -722,4 +761,10 @@ func splitCSV(raw string) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+func writeJSONStatus(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }

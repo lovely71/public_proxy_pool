@@ -40,6 +40,7 @@
             <span class="chip info">总节点 {{.Stats.NodesTotal}}</span>
             <span class="chip good">有效 {{.Stats.NodesValid}}</span>
             <span class="chip warn">Fresh {{.Stats.NodesFreshOK}}</span>
+            <span class="chip info">支持行内测 Google</span>
           </div>
         </div>
         <div class="mini-card">
@@ -120,7 +121,12 @@
 
         <div class="table-note">
           <span>桌面端使用固定滚动区域和紧凑行高，长地址与 URI 会自动省略，悬停可看完整内容。</span>
-          <span>左右拖动底部滚动条可查看更多列。</span>
+          <span>左右拖动底部滚动条可查看更多列；“测 Google”不会改写当前节点评分。</span>
+        </div>
+
+        <div class="hint-box node-test-note">
+          “测 Google”由前端按钮触发，但浏览器本身不能为单次请求指定任意代理节点，所以实际探测会由服务端走该节点访问
+          <span class="mono">{{.GoogleTestURL}}</span>，并把结果异步回填到当前行。
         </div>
 
         <div class="table-wrap table-pane">
@@ -166,7 +172,15 @@
                 <td class="mono" data-label="最后检测">{{fmtUnix .LastCheckedAt}}</td>
                 <td class="mono cell-ellipsis wide" data-label="节点信息" title="{{.RawURI}}">{{if .RawURI}}{{printf "%.72s" .RawURI}}{{else}}未记录{{end}}</td>
                 <td data-label="操作">
-                  <div class="table-actions">
+                  <div class="table-actions node-actions">
+                    <button
+                      class="js-node-google-test"
+                      type="button"
+                      data-node-id="{{.ID}}"
+                      data-node-label="{{.Host}}:{{.Port}}"
+                    >
+                      测 Google
+                    </button>
                     {{if gt .BanUntil 0}}
                     <form method="post" action="/ui/nodes/{{.ID}}/unban?token={{$.Token}}">
                       <button type="submit">解除封禁</button>
@@ -177,6 +191,7 @@
                     </form>
                     {{end}}
                   </div>
+                  <div class="node-test-feedback" data-node-test-result="{{.ID}}" aria-live="polite"></div>
                 </td>
               </tr>
               {{else}}
@@ -193,5 +208,72 @@
         </div>
       </div>
     </div>
+
+    <script>
+      (function () {
+        const token = "{{.Token}}";
+        const buttons = document.querySelectorAll(".js-node-google-test");
+
+        function getResultNode(id) {
+          return document.querySelector('[data-node-test-result="' + id + '"]');
+        }
+
+        function setResult(id, tone, text) {
+          const el = getResultNode(id);
+          if (!el) return;
+          el.className = "node-test-feedback" + (tone ? " is-" + tone : "");
+          el.textContent = text || "";
+        }
+
+        buttons.forEach(function (btn) {
+          btn.addEventListener("click", async function () {
+            const id = btn.getAttribute("data-node-id");
+            if (!id || btn.dataset.loading === "1") return;
+
+            const originalText = btn.textContent;
+            btn.dataset.loading = "1";
+            btn.disabled = true;
+            btn.textContent = "测试中...";
+            setResult(id, "loading", "正在通过节点访问 Google 204...");
+
+            try {
+              const resp = await fetch(
+                "/ui/nodes/" + encodeURIComponent(id) + "/test/google?token=" + encodeURIComponent(token),
+                {
+                  method: "POST",
+                  headers: {
+                    Accept: "application/json"
+                  }
+                }
+              );
+
+              if (!resp.ok) {
+                const raw = (await resp.text()).trim();
+                throw new Error(raw || "请求失败");
+              }
+
+              const data = await resp.json();
+              if (data.ok) {
+                const latency = data.latency_ms > 0 ? data.latency_ms + "ms" : "已连通";
+                const status = data.http_status ? " · HTTP " + data.http_status : "";
+                setResult(id, "ok", "Google 可达 · " + latency + status);
+              } else {
+                const detail =
+                  (data.error && String(data.error).trim()) ||
+                  (data.http_status ? "HTTP " + data.http_status : "未通过 204 检查");
+                setResult(id, "bad", "Google 不通 · " + detail);
+              }
+            } catch (error) {
+              const msg = error && error.message ? error.message : "请求失败";
+              setResult(id, "bad", "测试失败 · " + msg);
+            } finally {
+              btn.disabled = false;
+              btn.dataset.loading = "0";
+              btn.textContent = originalText;
+            }
+          });
+        });
+      })();
+    </script>
   </body>
 </html>

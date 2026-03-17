@@ -31,6 +31,7 @@ const (
 	PriorityOnDemand     = 10
 	PriorityPoolMaintain = 50
 	PrioritySourceSample = 80
+	GoogleGenerate204URL = "https://www.gstatic.com/generate_204"
 )
 
 type Task struct {
@@ -63,6 +64,16 @@ type ValidationResult struct {
 	Error       string
 	Score       float64
 	SourceID    int64
+}
+
+type URLTestResult struct {
+	NodeID     int64
+	TargetURL  string
+	FinalURL   string
+	HTTPStatus int
+	LatencyMS  int
+	OK         bool
+	Error      string
 }
 
 type Snapshot struct {
@@ -167,6 +178,38 @@ func (v *Validator) RequestCheck(ctx context.Context, nodeID int64) (ValidationR
 	case res := <-ch:
 		return res, nil
 	}
+}
+
+func (v *Validator) TestNodeGoogle(ctx context.Context, nodeID int64) (URLTestResult, error) {
+	return v.TestNodeURL(ctx, nodeID, GoogleGenerate204URL)
+}
+
+func (v *Validator) TestNodeURL(ctx context.Context, nodeID int64, targetURL string) (URLTestResult, error) {
+	res := URLTestResult{
+		NodeID:    nodeID,
+		TargetURL: strings.TrimSpace(targetURL),
+	}
+	if res.TargetURL == "" {
+		res.TargetURL = GoogleGenerate204URL
+	}
+	if nodeID <= 0 {
+		return res, fmt.Errorf("invalid node id")
+	}
+
+	node, err := v.st.GetNodeByID(ctx, nodeID)
+	if err != nil {
+		return res, err
+	}
+
+	ok, httpStatus, latencyMS, finalURL, testErr := v.testURLThroughNode(ctx, *node, res.TargetURL)
+	res.OK = ok
+	res.HTTPStatus = httpStatus
+	res.LatencyMS = latencyMS
+	res.FinalURL = finalURL
+	if testErr != nil {
+		res.Error = testErr.Error()
+	}
+	return res, nil
 }
 
 func (v *Validator) worker(ctx context.Context, idx int) {
@@ -488,6 +531,37 @@ func (v *Validator) checkV2Ray(ctx context.Context, node store.Node) (ok bool, l
 		return false, latencyMS, "", "", "", "", 0, err
 	}
 	return ok, latencyMS, exitIP, strings.ToUpper(country), strings.TrimSpace(asn), anonymity, clampInt(purity, 0, 100), nil
+}
+
+func (v *Validator) testURLThroughNode(ctx context.Context, node store.Node, targetURL string) (ok bool, httpStatus, latencyMS int, finalURL string, err error) {
+	switch node.Kind {
+	case model.KindProxy:
+		client, err := v.httpClientForProxy(node)
+		if err != nil {
+			return false, 0, 0, "", err
+		}
+		return performGenerate204Request(ctx, client, targetURL)
+	case model.KindV2Ray:
+		if !strings.EqualFold(strings.TrimSpace(v.cfg.V2RayValidateMode), "sing-box") {
+			return false, 0, 0, "", fmt.Errorf("v2ray google test requires V2RAY_VALIDATE_MODE=sing-box")
+		}
+		ctxRun, client, cleanup, stderr, err := v.startSingBoxHTTPClient(ctx, node)
+		if err != nil {
+			return false, 0, 0, "", err
+		}
+		defer cleanup()
+
+		ok, httpStatus, latencyMS, finalURL, err = performGenerate204Request(ctxRun, client, targetURL)
+		if err != nil {
+			if msg := strings.TrimSpace(stderr.String()); msg != "" {
+				return false, httpStatus, latencyMS, finalURL, fmt.Errorf("%w (%s)", err, msg)
+			}
+			return false, httpStatus, latencyMS, finalURL, err
+		}
+		return ok, httpStatus, latencyMS, finalURL, nil
+	default:
+		return false, 0, 0, "", fmt.Errorf("unsupported node kind: %s", node.Kind)
+	}
 }
 
 func (v *Validator) httpClientForProxy(node store.Node) (*http.Client, error) {
@@ -855,87 +929,12 @@ func dialSOCKS4(ctx context.Context, node store.Node, network, addr string, time
 }
 
 func (v *Validator) checkV2RayViaSingBox(ctx context.Context, node store.Node) (ok bool, exitIP, country, asn, anonymity string, purity int, err error) {
-	if strings.TrimSpace(v.cfg.SingBoxPath) == "" {
-		return false, "", "", "", "", 0, fmt.Errorf("sing-box path not set")
-	}
-	if _, err := exec.LookPath(v.cfg.SingBoxPath); err != nil {
-		return false, "", "", "", "", 0, fmt.Errorf("sing-box not found: %w", err)
-	}
-
-	parsed, err := v2ray.ParseURI(node.RawURI)
-	if err != nil || parsed == nil {
-		return false, "", "", "", "", 0, fmt.Errorf("parse v2ray uri: %w", err)
-	}
-	outbound, err := singBoxOutbound(parsed)
+	ctxRun, client, cleanup, stderr, err := v.startSingBoxHTTPClient(ctx, node)
 	if err != nil {
 		return false, "", "", "", "", 0, err
 	}
+	defer cleanup()
 
-	port, err := pickFreePort()
-	if err != nil {
-		return false, "", "", "", "", 0, err
-	}
-
-	tmpDir, err := os.MkdirTemp("", "proxypool-singbox-*")
-	if err != nil {
-		return false, "", "", "", "", 0, err
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	cfg := map[string]any{
-		"log": map[string]any{
-			"level": "error",
-		},
-		"inbounds": []any{
-			map[string]any{
-				"type":        "socks",
-				"tag":         "in",
-				"listen":      "127.0.0.1",
-				"listen_port": port,
-			},
-		},
-		"outbounds": []any{
-			outbound,
-			map[string]any{"type": "direct", "tag": "direct"},
-		},
-		"route": map[string]any{
-			"final": "proxy",
-		},
-	}
-	b, _ := json.Marshal(cfg)
-	cfgPath := filepath.Join(tmpDir, "config.json")
-	if err := os.WriteFile(cfgPath, b, 0o600); err != nil {
-		return false, "", "", "", "", 0, err
-	}
-
-	ctxRun, cancel := context.WithTimeout(ctx, v.cfg.ValidateTimeout+15*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctxRun, v.cfg.SingBoxPath, "run", "-c", cfgPath)
-	cmd.Stdout = io.Discard
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		return false, "", "", "", "", 0, err
-	}
-	defer func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}()
-
-	// Wait for socks to be ready.
-	if err := waitTCP(ctxRun, "127.0.0.1", port, 2*time.Second); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg != "" {
-			return false, "", "", "", "", 0, fmt.Errorf("sing-box not ready: %w (%s)", err, msg)
-		}
-		return false, "", "", "", "", 0, fmt.Errorf("sing-box not ready: %w", err)
-	}
-
-	client, err := httpClientViaSOCKS("127.0.0.1", port, v.cfg.ValidateTimeout)
-	if err != nil {
-		return false, "", "", "", "", 0, err
-	}
 	req, err := http.NewRequestWithContext(ctxRun, http.MethodGet, v.cfg.ValidateURL, nil)
 	if err != nil {
 		return false, "", "", "", "", 0, err
@@ -990,6 +989,123 @@ func (v *Validator) checkV2RayViaSingBox(ctx context.Context, node store.Node) (
 		asn = v.geo.ASN(exitIP)
 	}
 	return true, exitIP, country, strings.TrimSpace(asn), anonymity, purity, nil
+}
+
+func (v *Validator) startSingBoxHTTPClient(parent context.Context, node store.Node) (context.Context, *http.Client, func(), *bytes.Buffer, error) {
+	if strings.TrimSpace(v.cfg.SingBoxPath) == "" {
+		return nil, nil, nil, nil, fmt.Errorf("sing-box path not set")
+	}
+	if _, err := exec.LookPath(v.cfg.SingBoxPath); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("sing-box not found: %w", err)
+	}
+
+	parsed, err := v2ray.ParseURI(node.RawURI)
+	if err != nil || parsed == nil {
+		return nil, nil, nil, nil, fmt.Errorf("parse v2ray uri: %w", err)
+	}
+	outbound, err := singBoxOutbound(parsed)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	port, err := pickFreePort()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	tmpDir, err := os.MkdirTemp("", "proxypool-singbox-*")
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	cfg := map[string]any{
+		"log": map[string]any{
+			"level": "error",
+		},
+		"inbounds": []any{
+			map[string]any{
+				"type":        "socks",
+				"tag":         "in",
+				"listen":      "127.0.0.1",
+				"listen_port": port,
+			},
+		},
+		"outbounds": []any{
+			outbound,
+			map[string]any{"type": "direct", "tag": "direct"},
+		},
+		"route": map[string]any{
+			"final": "proxy",
+		},
+	}
+	b, _ := json.Marshal(cfg)
+	cfgPath := filepath.Join(tmpDir, "config.json")
+	if err := os.WriteFile(cfgPath, b, 0o600); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return nil, nil, nil, nil, err
+	}
+
+	ctxRun, cancel := context.WithTimeout(parent, v.cfg.ValidateTimeout+15*time.Second)
+
+	cmd := exec.CommandContext(ctxRun, v.cfg.SingBoxPath, "run", "-c", cfgPath)
+	cmd.Stdout = io.Discard
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		cancel()
+		_ = os.RemoveAll(tmpDir)
+		return nil, nil, nil, nil, err
+	}
+
+	cleanup := func() {
+		cancel()
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+		_ = os.RemoveAll(tmpDir)
+	}
+
+	// Wait for socks to be ready.
+	if err := waitTCP(ctxRun, "127.0.0.1", port, 2*time.Second); err != nil {
+		cleanup()
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return nil, nil, nil, nil, fmt.Errorf("sing-box not ready: %w (%s)", err, msg)
+		}
+		return nil, nil, nil, nil, fmt.Errorf("sing-box not ready: %w", err)
+	}
+
+	client, err := httpClientViaSOCKS("127.0.0.1", port, v.cfg.ValidateTimeout)
+	if err != nil {
+		cleanup()
+		return nil, nil, nil, nil, err
+	}
+	return ctxRun, client, cleanup, &stderr, nil
+}
+
+func performGenerate204Request(ctx context.Context, client *http.Client, targetURL string) (ok bool, httpStatus, latencyMS int, finalURL string, err error) {
+	start := time.Now()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return false, 0, 0, "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	resp, err := client.Do(req)
+	latencyMS = int(time.Since(start).Milliseconds())
+	if err != nil {
+		return false, 0, latencyMS, "", err
+	}
+	defer resp.Body.Close()
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL = resp.Request.URL.String()
+	}
+	httpStatus = resp.StatusCode
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusNoContent {
+		return false, httpStatus, latencyMS, finalURL, fmt.Errorf("unexpected status=%d", resp.StatusCode)
+	}
+	return true, httpStatus, latencyMS, finalURL, nil
 }
 
 func pickFreePort() (int, error) {
