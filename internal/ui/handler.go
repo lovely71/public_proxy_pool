@@ -25,7 +25,10 @@ import (
 //go:embed assets/templates/*.html assets/static/*
 var embeddedFS embed.FS
 
-const overviewEventsInterval = 2 * time.Second
+const (
+	overviewStatsInterval  = 2 * time.Second
+	overviewSystemInterval = 5 * time.Second
+)
 
 type Handler struct {
 	st  *store.Store
@@ -152,6 +155,7 @@ type viewData struct {
 	Query        map[string]string
 	BaseURL      string
 	APIKeysOn    bool
+	SystemItems  []systemPanelItem
 	ServerItems  []dashboardItem
 	RefreshItems []dashboardItem
 }
@@ -163,6 +167,14 @@ type dashboardItem struct {
 	Tone  string
 	Badge bool
 	Mono  bool
+}
+
+type systemPanelItem struct {
+	Key    string
+	Label  string
+	Value  string
+	Detail string
+	Tone   string
 }
 
 func (h *Handler) statsContext(parent context.Context) (context.Context, context.CancelFunc) {
@@ -178,13 +190,40 @@ func (h *Handler) loadStats(parent context.Context, now time.Time) (*store.Stats
 	return h.st.GetStats(ctx, now, h.cfg.FreshWithinDefault)
 }
 
-func (h *Handler) buildOverviewServerItems(now time.Time) []dashboardItem {
-	validatorSnap := h.val.Snapshot()
+func (h *Handler) buildOverviewSystemItems() []systemPanelItem {
 	sysSnap := h.sysMetrics.Snapshot()
 	cpuValue := "采集中"
 	if sysSnap.cpuReady {
 		cpuValue = formatPercent(sysSnap.cpuUsage)
 	}
+
+	return []systemPanelItem{
+		{
+			Key:    "cpu",
+			Label:  "CPU 使用率",
+			Value:  cpuValue,
+			Detail: fmt.Sprintf("系统 %d CPU / GOMAXPROCS %d", runtime.NumCPU(), runtime.GOMAXPROCS(0)),
+			Tone:   "info",
+		},
+		{
+			Key:    "memory",
+			Label:  "内存使用率",
+			Value:  formatMemoryUsage(sysSnap.memory, "未读取到"),
+			Detail: "基于 MemTotal 与 MemAvailable 估算物理内存占用",
+			Tone:   "good",
+		},
+		{
+			Key:    "swap",
+			Label:  "Swap 使用率",
+			Value:  formatMemoryUsage(sysSnap.swap, "未启用"),
+			Detail: "Swap 持续偏高通常意味着当前机器内存压力较大",
+			Tone:   "warn",
+		},
+	}
+}
+
+func (h *Handler) buildOverviewServerItems(now time.Time) []dashboardItem {
+	validatorSnap := h.val.Snapshot()
 
 	authValue, authTone := statusText(len(h.cfg.APIKeys) > 0, "已启用", "未启用")
 	rateLimitEnabled := h.cfg.RateLimitRPS > 0
@@ -211,21 +250,6 @@ func (h *Handler) buildOverviewServerItems(now time.Time) []dashboardItem {
 			Label: "服务运行时长",
 			Value: formatUptime(now.Sub(h.startedAt)),
 			Hint:  "按 UI handler 启动时间估算，页面刷新时会更新。",
-		},
-		{
-			Label: "CPU 使用率",
-			Value: cpuValue,
-			Hint:  fmt.Sprintf("系统 %d CPU / GOMAXPROCS %d。首次打开如果显示未读取到，刷新后即可看到采样值。", runtime.NumCPU(), runtime.GOMAXPROCS(0)),
-		},
-		{
-			Label: "内存使用率",
-			Value: formatMemoryUsage(sysSnap.memory, "未读取到"),
-			Hint:  "按 /proc/meminfo 的 MemTotal 与 MemAvailable 估算当前系统内存占用。",
-		},
-		{
-			Label: "Swap 使用率",
-			Value: formatMemoryUsage(sysSnap.swap, "未启用"),
-			Hint:  "如果这里持续偏高，通常说明机器内存压力已经比较明显。",
 		},
 		{
 			Label: "API 鉴权",
@@ -312,8 +336,8 @@ func (h *Handler) buildOverviewRefreshItems() []dashboardItem {
 		},
 		{
 			Label: "页面实时刷新",
-			Value: formatDurationValue(overviewEventsInterval, "默认"),
-			Hint:  "概览页通过 SSE 每隔固定周期推送核心统计。",
+			Value: fmt.Sprintf("统计 %s / 系统 %s", formatDurationValue(overviewStatsInterval, "默认"), formatDurationValue(overviewSystemInterval, "默认")),
+			Hint:  "概览页通过 SSE 分别推送统计与系统监控数据。",
 		},
 		{
 			Label: "NodeMaven 并发",
@@ -404,6 +428,7 @@ func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 		Token:        r.URL.Query().Get("token"),
 		BaseURL:      h.cfg.PublicBaseURL,
 		APIKeysOn:    len(h.cfg.APIKeys) > 0,
+		SystemItems:  h.buildOverviewSystemItems(),
 		ServerItems:  h.buildOverviewServerItems(now),
 		RefreshItems: h.buildOverviewRefreshItems(),
 	})
@@ -634,14 +659,16 @@ func (h *Handler) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ticker := time.NewTicker(overviewEventsInterval)
-	defer ticker.Stop()
+	statsTicker := time.NewTicker(overviewStatsInterval)
+	systemTicker := time.NewTicker(overviewSystemInterval)
+	defer statsTicker.Stop()
+	defer systemTicker.Stop()
 
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case <-ticker.C:
+		case <-statsTicker.C:
 			now := time.Now()
 			stats, err := h.loadStats(r.Context(), now)
 			if err != nil {
@@ -649,6 +676,14 @@ func (h *Handler) events(w http.ResponseWriter, r *http.Request) {
 			}
 			b, _ := json.Marshal(stats)
 			fmt.Fprintf(w, "event: stats\ndata: %s\n\n", string(b))
+			flusher.Flush()
+		case <-systemTicker.C:
+			payload := map[string]string{}
+			for _, item := range h.buildOverviewSystemItems() {
+				payload[item.Key] = item.Value
+			}
+			b, _ := json.Marshal(payload)
+			fmt.Fprintf(w, "event: system\ndata: %s\n\n", string(b))
 			flusher.Flush()
 		}
 	}

@@ -178,6 +178,12 @@ button {
   margin-bottom: var(--space-6);
 }
 
+.hero-main {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+}
+
 .hero-panel,
 .section-card,
 .stat-card,
@@ -284,6 +290,66 @@ button {
 .hero-side {
   display: grid;
   gap: var(--space-4);
+}
+
+.system-panel {
+  margin-bottom: 0;
+}
+
+.system-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.system-tile {
+  display: grid;
+  gap: 10px;
+  min-height: 172px;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(121, 139, 168, 0.16);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.72), transparent 36%),
+    rgba(244, 247, 251, 0.92);
+}
+
+.system-tile.tone-info {
+  background:
+    radial-gradient(circle at top right, rgba(15, 111, 255, 0.12), transparent 34%),
+    rgba(244, 247, 251, 0.92);
+}
+
+.system-tile.tone-good {
+  background:
+    radial-gradient(circle at top right, rgba(15, 159, 119, 0.12), transparent 34%),
+    rgba(244, 247, 251, 0.92);
+}
+
+.system-tile.tone-warn {
+  background:
+    radial-gradient(circle at top right, rgba(201, 133, 23, 0.12), transparent 34%),
+    rgba(244, 247, 251, 0.92);
+}
+
+.system-label {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.system-value {
+  font-size: clamp(24px, 2.4vw, 34px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.system-detail {
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .stats-grid {
@@ -798,7 +864,8 @@ tbody tr:hover {
   .field-grid,
   .field-grid.compact,
   .link-grid,
-  .config-grid {
+  .config-grid,
+  .system-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -824,7 +891,8 @@ tbody tr:hover {
   .field-grid,
   .field-grid.compact,
   .link-grid,
-  .config-grid {
+  .config-grid,
+  .system-grid {
     grid-template-columns: 1fr;
   }
 

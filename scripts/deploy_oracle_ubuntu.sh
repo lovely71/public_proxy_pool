@@ -6,6 +6,7 @@ DEFAULT_APP_DIR="/opt/${APP_NAME}"
 DEFAULT_IMAGE="ghcr.io/lovely71/public_proxy_pool:latest"
 DEFAULT_HOST_PORT="38482"
 DEFAULT_CPU_CORES="1"
+APT_UPDATED="0"
 
 log() {
   printf '[INFO] %s\n' "$*"
@@ -79,10 +80,46 @@ ensure_ubuntu() {
   fi
 }
 
-ensure_prerequisites() {
+apt_update_once() {
+  if [[ "${APT_UPDATED}" == "1" ]]; then
+    return
+  fi
+
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
-  apt-get install -y ca-certificates curl gnupg lsb-release openssl ufw
+  APT_UPDATED="1"
+}
+
+apt_install_packages() {
+  if (( $# == 0 )); then
+    return
+  fi
+
+  apt_update_once
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get install -y "$@"
+}
+
+ensure_runtime_prerequisites() {
+  local packages=()
+
+  if ! command -v curl >/dev/null 2>&1; then
+    packages+=(ca-certificates curl)
+  fi
+  if ! command -v openssl >/dev/null 2>&1; then
+    packages+=(openssl)
+  fi
+  if ! command -v ufw >/dev/null 2>&1; then
+    packages+=(ufw)
+  fi
+
+  if (( ${#packages[@]} == 0 )); then
+    log "运行依赖已就绪，跳过 apt 安装。"
+    return
+  fi
+
+  log "安装运行依赖: ${packages[*]}"
+  apt_install_packages "${packages[@]}"
 }
 
 ensure_sqlite3_if_needed() {
@@ -94,9 +131,8 @@ ensure_sqlite3_if_needed() {
     return
   fi
 
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -y
-  apt-get install -y sqlite3
+  log "安装 sqlite3，用于抓取间隔覆写。"
+  apt_install_packages sqlite3
 }
 
 install_docker() {
@@ -112,6 +148,9 @@ install_docker() {
   source /etc/os-release
   codename="${VERSION_CODENAME:-}"
   [[ -n "${codename}" ]] || die "无法识别 Ubuntu codename"
+
+  log "未检测到 Docker，开始安装 Docker 运行环境。"
+  apt_install_packages ca-certificates curl gnupg
 
   install -m 0755 -d /etc/apt/keyrings
   if [[ ! -f /etc/apt/keyrings/docker.asc ]]; then
@@ -551,9 +590,9 @@ main() {
 
   validate_port
   validate_source_interval
-  ensure_prerequisites
-  ensure_sqlite3_if_needed
   install_docker
+  ensure_runtime_prerequisites
+  ensure_sqlite3_if_needed
 
   mkdir -p "${APP_DIR}/data"
   generate_api_key_if_needed

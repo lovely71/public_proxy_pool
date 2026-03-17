@@ -29,17 +29,38 @@
 
     <div class="wrap">
       <div class="hero">
-        <div class="hero-panel">
-          <div class="eyebrow">运行概览</div>
-          <h1>代理池状态一眼看清，订阅和接口直接可用。</h1>
-          <p>
-            这里会持续展示抓取源规模、有效节点数量和实时 fresh 池状态。页面默认围绕 1c1g
-            场景做信息压缩，在手机、平板和桌面上都能顺畅查看。
-          </p>
-          <div class="hero-actions">
-            <a class="btn btn-primary" href="/ui/nodes?verify=1&limit=200&token={{.Token}}">查看有效节点</a>
-            <a class="btn btn-ghost" href="/ui/sub?token={{.Token}}">生成订阅链接</a>
-            <a class="btn" href="/ui/api?token={{.Token}}">查看中文帮助</a>
+        <div class="hero-main">
+          <div class="hero-panel">
+            <div class="eyebrow">运行概览</div>
+            <h1>代理池状态一眼看清，订阅和接口直接可用。</h1>
+            <p>
+              这里会持续展示抓取源规模、有效节点数量和实时 fresh 池状态。页面默认围绕 1c1g
+              场景做信息压缩，在手机、平板和桌面上都能顺畅查看。
+            </p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="/ui/nodes?verify=1&limit=200&token={{.Token}}">查看有效节点</a>
+              <a class="btn btn-ghost" href="/ui/sub?token={{.Token}}">生成订阅链接</a>
+              <a class="btn" href="/ui/api?token={{.Token}}">查看中文帮助</a>
+            </div>
+          </div>
+
+          <div class="section-card system-panel">
+            <div class="section-head">
+              <div>
+                <h2 class="section-title">系统监控</h2>
+                <p class="section-desc">把 CPU、内存和 Swap 独立放在首页左侧，便于在不切页的情况下判断机器负载。</p>
+              </div>
+              <span class="chip info">5s 刷新</span>
+            </div>
+            <div class="system-grid">
+              {{range .SystemItems}}
+                <div class="system-tile tone-{{.Tone}}">
+                  <div class="system-label">{{.Label}}</div>
+                  <div class="system-value mono" id="system-{{.Key}}">{{.Value}}</div>
+                  <div class="system-detail">{{.Detail}}</div>
+                </div>
+              {{end}}
+            </div>
           </div>
         </div>
 
@@ -217,6 +238,15 @@
               stats.NodesValid +
               " | 总节点 " +
               stats.NodesTotal;
+          } catch (_) {}
+        });
+        es.addEventListener("system", (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            for (const [key, value] of Object.entries(data)) {
+              const node = document.getElementById("system-" + key);
+              if (node) node.textContent = value;
+            }
           } catch (_) {}
         });
       })();
