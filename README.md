@@ -123,6 +123,50 @@ curl -H 'X-API-Key: your-token' 'http://127.0.0.1:8080/sub/v2ray?verify=1&limit=
 http://127.0.0.1:8080/sub/clash?verify=1&limit=200&token=your-token
 ```
 
+### 本地检测订阅节点有效性
+
+仓库内置了一个本地脚本，可以直接拿本项目生成的订阅链接做批量检测，并同时输出四档结果：
+
+- `alive`：节点本身 TCP 可连
+- `google_ok`：可通过节点访问 `https://www.gstatic.com/generate_204`
+- `huggingface_ok`：可通过节点访问 `https://huggingface.co/robots.txt`
+- `checkip_ok`：可通过节点访问 Cloudflare 的 `https://www.cloudflare.com/cdn-cgi/trace` 并拿到出口 IP
+
+最常见的用法：
+
+```bash
+./scripts/check_subscription.sh \
+  -url 'http://127.0.0.1:8080/sub/v2ray?verify=1&limit=50&token=your-token'
+```
+
+如果你的订阅链接没有把 token 放进 URL，也可以单独传请求头：
+
+```bash
+./scripts/check_subscription.sh \
+  -url 'http://127.0.0.1:8080/sub/clash?verify=1&limit=100' \
+  -api-key 'your-token'
+```
+
+也支持 JSON 输出，方便后续脚本筛选：
+
+```bash
+./scripts/check_subscription.sh \
+  -url 'http://127.0.0.1:8080/sub/plain?verify=1&limit=100&token=your-token' \
+  -json
+```
+
+说明：
+
+- `generate_204` 检测地址固定为 `https://www.gstatic.com/generate_204`
+- `huggingface` 检测地址默认是 `https://huggingface.co/robots.txt`
+- `checkip` 检测地址默认是 `https://www.cloudflare.com/cdn-cgi/trace`
+- 会自动识别本项目导出的 `plain`、`v2ray(base64)`、`clash yaml` 三种格式
+- `http` / `https` / `socks4` / `socks5` 节点可直接本地检测
+- `ss` / `vmess` / `vless` / `trojan` 节点需要本机可用 `sing-box`，并默认通过 `-v2ray-mode sing-box` 检测
+- 文本输出里会显示 `A/G/H/C` 四档标记，分别对应 `alive / google_ok / huggingface_ok / checkip_ok`
+- JSON 输出会包含 `alive`、`google_ok`、`huggingface_ok`、`checkip_ok` 汇总统计，以及每个节点对应的四档布尔值和错误信息
+- 退出码仍以 `checkip_ok` 为准：当至少有一个节点 `checkip_ok=true` 时返回 `0`，否则返回非 `0`
+
 ## 部署方式对比
 
 | 方式 | 适合场景 | 特点 |
