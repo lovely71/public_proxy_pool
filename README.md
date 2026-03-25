@@ -224,6 +224,7 @@ ssh ubuntu@YOUR_SERVER_IP \
 | `SQLITE_PATH` | SQLite 数据文件路径 | `./data/proxypool.db` |
 | `SQLITE_MAX_OPEN_CONNS` | SQLite 最大连接数，适合多核机器提升读并发 | `2` 到 `8` |
 | `SQLITE_BUSY_TIMEOUT` | SQLite 锁等待超时 | `10s`、`15s`、`20s` |
+| `SQLITE_WAL_SIZE_LIMIT` | SQLite WAL 日志文件的目标上限，超过后会自动 checkpoint 并回收 | 默认 `100m` |
 | `STATS_QUERY_TIMEOUT` | `/api/v1/stats` 与 UI 统计查询超时 | `2s`、`3s` |
 | `AUTO_FETCH_ENABLED` | 是否自动抓取 | `true` / `false` |
 | `AUTO_VALIDATE_ENABLED` | 是否自动校验 | `true` / `false` |
@@ -339,3 +340,13 @@ STATS_QUERY_TIMEOUT=3s
 ```
 
 这样可以明显改善统计页和 `/api/v1/stats` 的响应表现。
+
+### 为什么 SQLite 的 `-wal` 日志文件会突然变大？
+
+项目默认会把 `WAL` 日志大小限制在 `100m`，并在后台定期检查；当 `proxypool.db-wal` 超过这个值时，会自动做一次 checkpoint 和回收。
+
+如果你希望手动覆盖这个上限，可以设置：
+
+```bash
+SQLITE_WAL_SIZE_LIMIT=100m
+```

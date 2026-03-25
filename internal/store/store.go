@@ -15,12 +15,15 @@ import (
 )
 
 type Store struct {
-	db *sql.DB
+	db                *sql.DB
+	sqlitePath        string
+	walSizeLimitBytes int64
 }
 
 type OpenOptions struct {
-	MaxOpenConns int
-	BusyTimeout  time.Duration
+	MaxOpenConns      int
+	BusyTimeout       time.Duration
+	WALSizeLimitBytes int64
 }
 
 func Open(path string) (*Store, error) {
@@ -39,7 +42,7 @@ func OpenWithOptions(path string, opts OpenOptions) (*Store, error) {
 	opts = normalizeOpenOptions(path, opts)
 	dsn := path
 	if !isMemorySQLitePath(path) {
-		dsn = sqliteDSN(path, opts.BusyTimeout)
+		dsn = sqliteDSN(path, opts.BusyTimeout, opts.WALSizeLimitBytes)
 	}
 
 	db, err := sql.Open("sqlite", dsn)
@@ -49,7 +52,11 @@ func OpenWithOptions(path string, opts OpenOptions) (*Store, error) {
 	db.SetMaxOpenConns(opts.MaxOpenConns)
 	db.SetMaxIdleConns(opts.MaxOpenConns)
 
-	st := &Store{db: db}
+	st := &Store{
+		db:                db,
+		sqlitePath:        path,
+		walSizeLimitBytes: opts.WALSizeLimitBytes,
+	}
 	if isMemorySQLitePath(path) {
 		if err := st.initPragmas(opts.BusyTimeout); err != nil {
 			_ = db.Close()
@@ -66,10 +73,14 @@ func normalizeOpenOptions(path string, opts OpenOptions) OpenOptions {
 	if opts.BusyTimeout <= 0 {
 		opts.BusyTimeout = 5 * time.Second
 	}
+	if opts.WALSizeLimitBytes <= 0 {
+		opts.WALSizeLimitBytes = 100 * 1024 * 1024
+	}
 	if isMemorySQLitePath(path) {
 		// Each :memory: connection gets its own isolated database, so keep tests
 		// and in-memory usage on a single shared connection.
 		opts.MaxOpenConns = 1
+		opts.WALSizeLimitBytes = 0
 	}
 	return opts
 }
@@ -82,11 +93,12 @@ func isMemorySQLitePath(path string) bool {
 	return strings.HasPrefix(path, "file::memory:?")
 }
 
-func sqliteDSN(path string, busyTimeout time.Duration) string {
+func sqliteDSN(path string, busyTimeout time.Duration, walSizeLimitBytes int64) string {
 	args := []string{
 		"_pragma=" + pragmaValue("busy_timeout", strconv.FormatInt(busyTimeout.Milliseconds(), 10)),
 		"_pragma=" + pragmaValue("foreign_keys", "ON"),
 		"_pragma=" + pragmaValue("journal_mode", "WAL"),
+		"_pragma=" + pragmaValue("journal_size_limit", strconv.FormatInt(walSizeLimitBytes, 10)),
 		"_pragma=" + pragmaValue("synchronous", "NORMAL"),
 		"_pragma=" + pragmaValue("temp_store", "MEMORY"),
 	}

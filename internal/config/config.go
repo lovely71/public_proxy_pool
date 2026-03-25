@@ -11,9 +11,10 @@ type Config struct {
 	HTTPAddr      string
 	PublicBaseURL string
 
-	SQLitePath         string
-	SQLiteMaxOpenConns int
-	SQLiteBusyTimeout  time.Duration
+	SQLitePath              string
+	SQLiteMaxOpenConns      int
+	SQLiteBusyTimeout       time.Duration
+	SQLiteWALSizeLimitBytes int64
 
 	GeoIPCountryMMDB string
 	GeoIPASNMMDB     string
@@ -85,17 +86,18 @@ type StartupWarmupConfig struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		HTTPAddr:           envString("HTTP_ADDR", ":8080"),
-		PublicBaseURL:      strings.TrimRight(envString("PUBLIC_BASE_URL", ""), "/"),
-		SQLitePath:         envString("SQLITE_PATH", "./data/proxypool.db"),
-		SQLiteMaxOpenConns: envInt("SQLITE_MAX_OPEN_CONNS", 4),
-		SQLiteBusyTimeout:  envDuration("SQLITE_BUSY_TIMEOUT", 15*time.Second),
-		GeoIPCountryMMDB:   envString("GEOIP_COUNTRY_MMDB", ""),
-		GeoIPASNMMDB:       envString("GEOIP_ASN_MMDB", ""),
-		APIKeys:            splitCSV(envString("API_KEYS", "")),
-		RateLimitRPS:       envFloat("RATE_LIMIT_RPS", 0),
-		RateLimitBurst:     envInt("RATE_LIMIT_BURST", 0),
-		StatsQueryTimeout:  envDuration("STATS_QUERY_TIMEOUT", 3*time.Second),
+		HTTPAddr:                envString("HTTP_ADDR", ":8080"),
+		PublicBaseURL:           strings.TrimRight(envString("PUBLIC_BASE_URL", ""), "/"),
+		SQLitePath:              envString("SQLITE_PATH", "./data/proxypool.db"),
+		SQLiteMaxOpenConns:      envInt("SQLITE_MAX_OPEN_CONNS", 4),
+		SQLiteBusyTimeout:       envDuration("SQLITE_BUSY_TIMEOUT", 15*time.Second),
+		SQLiteWALSizeLimitBytes: envSizeBytes("SQLITE_WAL_SIZE_LIMIT", 100*1024*1024),
+		GeoIPCountryMMDB:        envString("GEOIP_COUNTRY_MMDB", ""),
+		GeoIPASNMMDB:            envString("GEOIP_ASN_MMDB", ""),
+		APIKeys:                 splitCSV(envString("API_KEYS", "")),
+		RateLimitRPS:            envFloat("RATE_LIMIT_RPS", 0),
+		RateLimitBurst:          envInt("RATE_LIMIT_BURST", 0),
+		StatsQueryTimeout:       envDuration("STATS_QUERY_TIMEOUT", 3*time.Second),
 
 		AutoFetchEnabled:    envBool("AUTO_FETCH_ENABLED", true),
 		AutoValidateEnabled: envBool("AUTO_VALIDATE_ENABLED", true),
@@ -218,6 +220,46 @@ func envFloat(name string, def float64) float64 {
 		return def
 	}
 	return v
+}
+
+func envSizeBytes(name string, def int64) int64 {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return def
+	}
+	v, err := parseSizeBytes(raw)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+func parseSizeBytes(raw string) (int64, error) {
+	s := strings.TrimSpace(strings.ToLower(raw))
+	for _, item := range []struct {
+		suffix string
+		scale  int64
+	}{
+		{suffix: "gib", scale: 1024 * 1024 * 1024},
+		{suffix: "gb", scale: 1024 * 1024 * 1024},
+		{suffix: "g", scale: 1024 * 1024 * 1024},
+		{suffix: "mib", scale: 1024 * 1024},
+		{suffix: "mb", scale: 1024 * 1024},
+		{suffix: "m", scale: 1024 * 1024},
+		{suffix: "kib", scale: 1024},
+		{suffix: "kb", scale: 1024},
+		{suffix: "k", scale: 1024},
+		{suffix: "b", scale: 1},
+	} {
+		if strings.HasSuffix(s, item.suffix) {
+			n, err := strconv.ParseInt(strings.TrimSpace(strings.TrimSuffix(s, item.suffix)), 10, 64)
+			if err != nil {
+				return 0, err
+			}
+			return n * item.scale, nil
+		}
+	}
+	return strconv.ParseInt(s, 10, 64)
 }
 
 func splitCSV(raw string) []string {

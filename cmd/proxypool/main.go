@@ -20,6 +20,8 @@ import (
 	"github.com/qiyiyun/public_proxy_pool/internal/validator"
 )
 
+const sqliteWALMaintainInterval = 30 * time.Second
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
@@ -31,8 +33,9 @@ func main() {
 	}
 
 	st, err := store.OpenWithOptions(cfg.SQLitePath, store.OpenOptions{
-		MaxOpenConns: cfg.SQLiteMaxOpenConns,
-		BusyTimeout:  cfg.SQLiteBusyTimeout,
+		MaxOpenConns:      cfg.SQLiteMaxOpenConns,
+		BusyTimeout:       cfg.SQLiteBusyTimeout,
+		WALSizeLimitBytes: cfg.SQLiteWALSizeLimitBytes,
 	})
 	if err != nil {
 		logger.Error("open sqlite failed", "error", err)
@@ -79,6 +82,25 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if err := enforceSQLiteWALSizeLimit(st, cfg.SQLiteBusyTimeout); err != nil {
+		logger.Warn("sqlite wal size enforcement failed", "error", err)
+	}
+
+	go func() {
+		ticker := time.NewTicker(sqliteWALMaintainInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := enforceSQLiteWALSizeLimit(st, cfg.SQLiteBusyTimeout); err != nil {
+					logger.Warn("sqlite wal maintenance failed", "error", err)
+				}
+			}
+		}
+	}()
+
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -99,4 +121,15 @@ func main() {
 		logger.Error("http server failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+func enforceSQLiteWALSizeLimit(st *store.Store, busyTimeout time.Duration) error {
+	timeout := busyTimeout
+	if timeout < 10*time.Second {
+		timeout = 10 * time.Second
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return st.EnforceWALSizeLimit(ctx)
 }
