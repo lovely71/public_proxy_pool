@@ -226,6 +226,7 @@ ssh ubuntu@YOUR_SERVER_IP \
 | `SQLITE_BUSY_TIMEOUT` | SQLite 锁等待超时 | `10s`、`15s`、`20s` |
 | `SQLITE_WAL_SIZE_LIMIT` | SQLite WAL 日志文件的目标上限，超过后会自动 checkpoint 并回收 | 默认 `100m` |
 | `STATS_QUERY_TIMEOUT` | `/api/v1/stats` 与 UI 统计查询超时 | `2s`、`3s` |
+| `INVALID_NODE_RETENTION` | `status=invalid` 且超过该时长未再出现的节点会在 cleanup 阶段删除 | 默认 `72h` |
 | `AUTO_FETCH_ENABLED` | 是否自动抓取 | `true` / `false` |
 | `AUTO_VALIDATE_ENABLED` | 是否自动校验 | `true` / `false` |
 | `FETCH_PROFILE` | 部署脚本使用的抓取参数档位 | `lite` / `full` / `custom` |
@@ -349,4 +350,14 @@ STATS_QUERY_TIMEOUT=3s
 
 ```bash
 SQLITE_WAL_SIZE_LIMIT=100m
+```
+
+### 失效老节点会保留多久？
+
+默认会保留最多 `3天`。cleanup 任务运行时，会删除 `status='invalid'` 且 `last_seen_at` 已经早于 `72h` 截止线的老节点。
+
+如果你希望手动调整，可以设置：
+
+```bash
+INVALID_NODE_RETENTION=72h
 ```

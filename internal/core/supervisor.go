@@ -394,6 +394,9 @@ func (s *Supervisor) cleanupOnce(ctx context.Context) error {
 	now := time.Now()
 	cut := now.Add(-s.cfg.ChecksRetention).Unix()
 	_, _ = s.st.PruneChecksBefore(ctx, cut)
+	if s.cfg.InvalidNodeRetention > 0 {
+		_, _ = s.st.PruneInvalidNodesBefore(ctx, now.Add(-s.cfg.InvalidNodeRetention).Unix())
+	}
 	_, _ = s.st.PruneIPFactsBefore(ctx, now.Add(-30*24*time.Hour).Unix())
 	return nil
 }

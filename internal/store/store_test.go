@@ -66,6 +66,50 @@ func TestGetStats_EmptyDB(t *testing.T) {
 	}
 }
 
+func TestPruneInvalidNodesBefore_RemovesOnlyOldInvalidNodes(t *testing.T) {
+	st, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+
+	if err := st.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	now := time.Now()
+	_, err = st.UpsertNodes(context.Background(), now, []NodeUpsert{
+		{Kind: "proxy", Protocol: "http", Fingerprint: "invalid-old", Host: "1.1.1.1", Port: 80, RawURI: "http://1.1.1.1:80", LastSource: 1},
+		{Kind: "proxy", Protocol: "http", Fingerprint: "invalid-fresh", Host: "2.2.2.2", Port: 80, RawURI: "http://2.2.2.2:80", LastSource: 1},
+		{Kind: "proxy", Protocol: "http", Fingerprint: "valid-old", Host: "3.3.3.3", Port: 80, RawURI: "http://3.3.3.3:80", LastSource: 1},
+	})
+	if err != nil {
+		t.Fatalf("upsert nodes: %v", err)
+	}
+
+	mustExec(t, st, `UPDATE nodes SET status='invalid', last_seen_at=? WHERE fingerprint='invalid-old'`, now.Add(-4*24*time.Hour).Unix())
+	mustExec(t, st, `UPDATE nodes SET status='invalid', last_seen_at=? WHERE fingerprint='invalid-fresh'`, now.Add(-2*24*time.Hour).Unix())
+	mustExec(t, st, `UPDATE nodes SET status='valid', last_seen_at=? WHERE fingerprint='valid-old'`, now.Add(-10*24*time.Hour).Unix())
+
+	pruned, err := st.PruneInvalidNodesBefore(context.Background(), now.Add(-3*24*time.Hour).Unix())
+	if err != nil {
+		t.Fatalf("prune invalid nodes: %v", err)
+	}
+	if pruned != 1 {
+		t.Fatalf("expected 1 pruned node, got %d", pruned)
+	}
+
+	if _, err := st.GetNodeByFingerprint(context.Background(), "invalid-old"); err != ErrNotFound {
+		t.Fatalf("expected invalid-old to be pruned, got %v", err)
+	}
+	if _, err := st.GetNodeByFingerprint(context.Background(), "invalid-fresh"); err != nil {
+		t.Fatalf("expected invalid-fresh to remain, got %v", err)
+	}
+	if _, err := st.GetNodeByFingerprint(context.Background(), "valid-old"); err != nil {
+		t.Fatalf("expected valid-old to remain, got %v", err)
+	}
+}
+
 func TestEnforceWALSizeLimit_TruncatesOversizedWAL(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "proxypool.db")
 	st, err := OpenWithOptions(dbPath, OpenOptions{
@@ -119,4 +163,11 @@ func fileSize(t *testing.T, path string, allowMissing bool) int64 {
 		t.Fatalf("stat %s: %v", path, err)
 	}
 	return info.Size()
+}
+
+func mustExec(t *testing.T, st *Store, query string, args ...any) {
+	t.Helper()
+	if _, err := st.DB().ExecContext(context.Background(), query, args...); err != nil {
+		t.Fatalf("exec %q: %v", query, err)
+	}
 }

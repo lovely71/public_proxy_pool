@@ -54,8 +54,9 @@ type Config struct {
 	V2RayValidateMode string // "tcp" | "sing-box" (best-effort)
 	SingBoxPath       string
 
-	ChecksRetention time.Duration
-	CleanupInterval time.Duration
+	ChecksRetention      time.Duration
+	InvalidNodeRetention time.Duration
+	CleanupInterval      time.Duration
 }
 
 type NodeMavenConfig struct {
@@ -126,8 +127,9 @@ func Load() (*Config, error) {
 		V2RayValidateMode: envString("V2RAY_VALIDATE_MODE", "tcp"),
 		SingBoxPath:       envString("SING_BOX_PATH", "sing-box"),
 
-		ChecksRetention: envDuration("CHECKS_RETENTION", 30*24*time.Hour),
-		CleanupInterval: envDuration("CLEANUP_INTERVAL", 6*time.Hour),
+		ChecksRetention:      envDuration("CHECKS_RETENTION", 30*24*time.Hour),
+		InvalidNodeRetention: envDuration("INVALID_NODE_RETENTION", 72*time.Hour),
+		CleanupInterval:      envDuration("CLEANUP_INTERVAL", 6*time.Hour),
 	}
 
 	if cfg.PublicBaseURL != "" {

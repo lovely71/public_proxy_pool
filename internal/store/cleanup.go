@@ -22,3 +22,11 @@ func (s *Store) PruneIPFactsBefore(ctx context.Context, cutoffUnix int64) (int64
 	return n, nil
 }
 
+func (s *Store) PruneInvalidNodesBefore(ctx context.Context, cutoffUnix int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM nodes WHERE status='invalid' AND last_seen_at < ?`, cutoffUnix)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
