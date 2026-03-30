@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,7 @@ import (
 )
 
 type NodeMavenProxy struct {
-	IPAddress   string `json:"ip_address"`
+	IPAddress  string `json:"ip_address"`
 	Port       int    `json:"port"`
 	Country    string `json:"country"`
 	Protocol   string `json:"protocol"`
@@ -23,8 +24,34 @@ type NodeMavenProxy struct {
 }
 
 type nodeMavenResp struct {
-	Total   int             `json:"total"`
+	Total   int              `json:"total"`
 	Proxies []NodeMavenProxy `json:"proxies"`
+}
+
+func (p *NodeMavenProxy) UnmarshalJSON(data []byte) error {
+	type rawNodeMavenProxy struct {
+		IPAddress  string `json:"ip_address"`
+		Port       any    `json:"port"`
+		Country    string `json:"country"`
+		Protocol   string `json:"protocol"`
+		Type       string `json:"type"`
+		LatencyRaw any    `json:"latency"`
+	}
+
+	var raw rawNodeMavenProxy
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&raw); err != nil {
+		return err
+	}
+
+	p.IPAddress = raw.IPAddress
+	p.Port = SafeInt(raw.Port)
+	p.Country = raw.Country
+	p.Protocol = raw.Protocol
+	p.Type = raw.Type
+	p.LatencyRaw = raw.LatencyRaw
+	return nil
 }
 
 type NodeMavenClient struct {
