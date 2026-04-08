@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -18,6 +19,7 @@ type Store struct {
 	db                *sql.DB
 	sqlitePath        string
 	walSizeLimitBytes int64
+	walMu             sync.Mutex
 }
 
 type OpenOptions struct {

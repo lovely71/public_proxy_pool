@@ -17,8 +17,10 @@ func (s *Store) EnforceWALSizeLimit(ctx context.Context) error {
 	if s == nil || s.db == nil || s.sqlitePath == "" || s.walSizeLimitBytes <= 0 {
 		return nil
 	}
+	s.walMu.Lock()
+	defer s.walMu.Unlock()
 
-	size, err := s.walSizeBytes()
+	size, err := s.WALSizeBytes()
 	if err != nil {
 		return err
 	}
@@ -33,7 +35,7 @@ func (s *Store) EnforceWALSizeLimit(ctx context.Context) error {
 	if _, err := s.runWALCheckpoint(ctx, "PASSIVE"); err != nil {
 		return err
 	}
-	size, err = s.walSizeBytes()
+	size, err = s.WALSizeBytes()
 	if err != nil || size <= s.walSizeLimitBytes {
 		return err
 	}
@@ -41,7 +43,7 @@ func (s *Store) EnforceWALSizeLimit(ctx context.Context) error {
 	if _, err := s.runWALCheckpoint(ctx, "RESTART"); err != nil {
 		return err
 	}
-	size, err = s.walSizeBytes()
+	size, err = s.WALSizeBytes()
 	if err != nil || size <= s.walSizeLimitBytes {
 		return err
 	}
@@ -52,7 +54,10 @@ func (s *Store) EnforceWALSizeLimit(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) walSizeBytes() (int64, error) {
+func (s *Store) WALSizeBytes() (int64, error) {
+	if s == nil || s.sqlitePath == "" {
+		return 0, nil
+	}
 	info, err := os.Stat(s.sqlitePath + "-wal")
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

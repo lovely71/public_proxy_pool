@@ -16,6 +16,7 @@ type Config struct {
 	SQLiteBusyTimeout       time.Duration
 	SQLiteWALSizeLimitBytes int64
 	SQLiteWALAutoCheckpoint int
+	SQLiteWALHardLimitBytes int64
 
 	GeoIPCountryMMDB string
 	GeoIPASNMMDB     string
@@ -132,6 +133,10 @@ func Load() (*Config, error) {
 		ChecksRetention:      envDuration("CHECKS_RETENTION", 30*24*time.Hour),
 		InvalidNodeRetention: envDuration("INVALID_NODE_RETENTION", 72*time.Hour),
 		CleanupInterval:      envDuration("CLEANUP_INTERVAL", 6*time.Hour),
+	}
+	cfg.SQLiteWALHardLimitBytes = envSizeBytes("SQLITE_WAL_HARD_LIMIT", cfg.SQLiteWALSizeLimitBytes*2)
+	if cfg.SQLiteWALHardLimitBytes < cfg.SQLiteWALSizeLimitBytes {
+		cfg.SQLiteWALHardLimitBytes = cfg.SQLiteWALSizeLimitBytes
 	}
 
 	if cfg.PublicBaseURL != "" {

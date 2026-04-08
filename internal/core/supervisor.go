@@ -15,6 +15,8 @@ import (
 	"github.com/qiyiyun/public_proxy_pool/internal/validator"
 )
 
+const walPressurePauseInterval = 3 * time.Second
+
 type Supervisor struct {
 	st        *store.Store
 	val       *validator.Validator
@@ -51,6 +53,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 func (s *Supervisor) fetchLoop(ctx context.Context) error {
 	for {
+		if s.pauseForWALPressure(ctx) {
+			continue
+		}
 		now := time.Now()
 		if err := s.fetchTick(ctx, now); err != nil {
 			slog.Warn("fetch tick failed", "error", err)
@@ -405,6 +410,9 @@ func (s *Supervisor) validateLoop(ctx context.Context) error {
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
 	for {
+		if s.pauseForWALPressure(ctx) {
+			continue
+		}
 		if err := s.ensureFreshPool(ctx); err != nil {
 			slog.Warn("ensure fresh pool failed", "error", err)
 		}
@@ -413,6 +421,40 @@ func (s *Supervisor) validateLoop(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 		}
+	}
+}
+
+func (s *Supervisor) pauseForWALPressure(ctx context.Context) bool {
+	if s == nil || s.st == nil || s.cfg == nil || s.cfg.SQLiteWALHardLimitBytes <= 0 {
+		return false
+	}
+
+	size, err := s.st.WALSizeBytes()
+	if err != nil {
+		slog.Warn("read sqlite wal size failed", "error", err)
+		return false
+	}
+	if size <= s.cfg.SQLiteWALHardLimitBytes {
+		return false
+	}
+
+	timeout := s.cfg.SQLiteBusyTimeout * 3
+	if timeout < 60*time.Second {
+		timeout = 60 * time.Second
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := s.st.EnforceWALSizeLimit(runCtx); err != nil {
+		slog.Warn("sqlite wal hard protection failed", "error", err, "wal_bytes", size, "hard_limit_bytes", s.cfg.SQLiteWALHardLimitBytes)
+	}
+
+	timer := time.NewTimer(walPressurePauseInterval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 

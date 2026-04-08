@@ -28,10 +28,11 @@ import (
 )
 
 const (
-	PriorityOnDemand     = 10
-	PriorityPoolMaintain = 50
-	PrioritySourceSample = 80
-	GoogleGenerate204URL = "https://www.gstatic.com/generate_204"
+	PriorityOnDemand       = 10
+	PriorityPoolMaintain   = 50
+	PrioritySourceSample   = 80
+	GoogleGenerate204URL   = "https://www.gstatic.com/generate_204"
+	walPressureWorkerPause = 2 * time.Second
 )
 
 type Task struct {
@@ -219,6 +220,9 @@ func (v *Validator) worker(ctx context.Context, idx int) {
 			return
 		default:
 		}
+		if v.pauseForWALPressure(ctx) {
+			continue
+		}
 		task, ok := v.pop()
 		if !ok {
 			time.Sleep(120 * time.Millisecond)
@@ -226,6 +230,26 @@ func (v *Validator) worker(ctx context.Context, idx int) {
 		}
 		res := v.runOne(ctx, task)
 		v.finish(task, res)
+	}
+}
+
+func (v *Validator) pauseForWALPressure(ctx context.Context) bool {
+	if v == nil || v.st == nil || v.cfg == nil || v.cfg.SQLiteWALHardLimitBytes <= 0 {
+		return false
+	}
+
+	size, err := v.st.WALSizeBytes()
+	if err != nil || size <= v.cfg.SQLiteWALHardLimitBytes {
+		return false
+	}
+
+	timer := time.NewTimer(walPressureWorkerPause)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 

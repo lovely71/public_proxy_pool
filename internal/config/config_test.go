@@ -38,3 +38,29 @@ func TestEnvSizeBytes_FallsBackToDefaultOnInvalidValue(t *testing.T) {
 		t.Fatalf("envSizeBytes should fall back to default, got %d", got)
 	}
 }
+
+func TestLoad_DerivesSQLiteWALHardLimitFromSizeLimit(t *testing.T) {
+	t.Setenv("SQLITE_WAL_SIZE_LIMIT", "100m")
+	t.Setenv("SQLITE_WAL_HARD_LIMIT", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.SQLiteWALHardLimitBytes != 200*1024*1024 {
+		t.Fatalf("expected hard limit 200MiB, got %d", cfg.SQLiteWALHardLimitBytes)
+	}
+}
+
+func TestLoad_ClampsSQLiteWALHardLimitAtLeastSizeLimit(t *testing.T) {
+	t.Setenv("SQLITE_WAL_SIZE_LIMIT", "100m")
+	t.Setenv("SQLITE_WAL_HARD_LIMIT", "50m")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.SQLiteWALHardLimitBytes != 100*1024*1024 {
+		t.Fatalf("expected hard limit to clamp to size limit, got %d", cfg.SQLiteWALHardLimitBytes)
+	}
+}
