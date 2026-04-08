@@ -20,7 +20,7 @@ import (
 	"github.com/qiyiyun/public_proxy_pool/internal/validator"
 )
 
-const sqliteWALMaintainInterval = 30 * time.Second
+const sqliteWALMaintainInterval = 15 * time.Second
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -36,6 +36,7 @@ func main() {
 		MaxOpenConns:      cfg.SQLiteMaxOpenConns,
 		BusyTimeout:       cfg.SQLiteBusyTimeout,
 		WALSizeLimitBytes: cfg.SQLiteWALSizeLimitBytes,
+		WALAutoCheckpoint: cfg.SQLiteWALAutoCheckpoint,
 	})
 	if err != nil {
 		logger.Error("open sqlite failed", "error", err)
@@ -124,9 +125,9 @@ func main() {
 }
 
 func enforceSQLiteWALSizeLimit(st *store.Store, busyTimeout time.Duration) error {
-	timeout := busyTimeout
-	if timeout < 10*time.Second {
-		timeout = 10 * time.Second
+	timeout := busyTimeout * 3
+	if timeout < 60*time.Second {
+		timeout = 60 * time.Second
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

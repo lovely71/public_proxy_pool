@@ -24,6 +24,7 @@ type OpenOptions struct {
 	MaxOpenConns      int
 	BusyTimeout       time.Duration
 	WALSizeLimitBytes int64
+	WALAutoCheckpoint int
 }
 
 func Open(path string) (*Store, error) {
@@ -42,7 +43,7 @@ func OpenWithOptions(path string, opts OpenOptions) (*Store, error) {
 	opts = normalizeOpenOptions(path, opts)
 	dsn := path
 	if !isMemorySQLitePath(path) {
-		dsn = sqliteDSN(path, opts.BusyTimeout, opts.WALSizeLimitBytes)
+		dsn = sqliteDSN(path, opts.BusyTimeout, opts.WALSizeLimitBytes, opts.WALAutoCheckpoint)
 	}
 
 	db, err := sql.Open("sqlite", dsn)
@@ -76,11 +77,15 @@ func normalizeOpenOptions(path string, opts OpenOptions) OpenOptions {
 	if opts.WALSizeLimitBytes <= 0 {
 		opts.WALSizeLimitBytes = 100 * 1024 * 1024
 	}
+	if opts.WALAutoCheckpoint <= 0 {
+		opts.WALAutoCheckpoint = 256
+	}
 	if isMemorySQLitePath(path) {
 		// Each :memory: connection gets its own isolated database, so keep tests
 		// and in-memory usage on a single shared connection.
 		opts.MaxOpenConns = 1
 		opts.WALSizeLimitBytes = 0
+		opts.WALAutoCheckpoint = 0
 	}
 	return opts
 }
@@ -93,12 +98,13 @@ func isMemorySQLitePath(path string) bool {
 	return strings.HasPrefix(path, "file::memory:?")
 }
 
-func sqliteDSN(path string, busyTimeout time.Duration, walSizeLimitBytes int64) string {
+func sqliteDSN(path string, busyTimeout time.Duration, walSizeLimitBytes int64, walAutoCheckpoint int) string {
 	args := []string{
 		"_pragma=" + pragmaValue("busy_timeout", strconv.FormatInt(busyTimeout.Milliseconds(), 10)),
 		"_pragma=" + pragmaValue("foreign_keys", "ON"),
 		"_pragma=" + pragmaValue("journal_mode", "WAL"),
 		"_pragma=" + pragmaValue("journal_size_limit", strconv.FormatInt(walSizeLimitBytes, 10)),
+		"_pragma=" + pragmaValue("wal_autocheckpoint", strconv.Itoa(walAutoCheckpoint)),
 		"_pragma=" + pragmaValue("synchronous", "NORMAL"),
 		"_pragma=" + pragmaValue("temp_store", "MEMORY"),
 	}

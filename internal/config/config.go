@@ -15,6 +15,7 @@ type Config struct {
 	SQLiteMaxOpenConns      int
 	SQLiteBusyTimeout       time.Duration
 	SQLiteWALSizeLimitBytes int64
+	SQLiteWALAutoCheckpoint int
 
 	GeoIPCountryMMDB string
 	GeoIPASNMMDB     string
@@ -93,6 +94,7 @@ func Load() (*Config, error) {
 		SQLiteMaxOpenConns:      envInt("SQLITE_MAX_OPEN_CONNS", 4),
 		SQLiteBusyTimeout:       envDuration("SQLITE_BUSY_TIMEOUT", 15*time.Second),
 		SQLiteWALSizeLimitBytes: envSizeBytes("SQLITE_WAL_SIZE_LIMIT", 100*1024*1024),
+		SQLiteWALAutoCheckpoint: envInt("SQLITE_WAL_AUTOCHECKPOINT", 256),
 		GeoIPCountryMMDB:        envString("GEOIP_COUNTRY_MMDB", ""),
 		GeoIPASNMMDB:            envString("GEOIP_ASN_MMDB", ""),
 		APIKeys:                 splitCSV(envString("API_KEYS", "")),

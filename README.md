@@ -225,6 +225,7 @@ ssh ubuntu@YOUR_SERVER_IP \
 | `SQLITE_MAX_OPEN_CONNS` | SQLite 最大连接数，适合多核机器提升读并发 | `2` 到 `8` |
 | `SQLITE_BUSY_TIMEOUT` | SQLite 锁等待超时 | `10s`、`15s`、`20s` |
 | `SQLITE_WAL_SIZE_LIMIT` | SQLite WAL 日志文件的目标上限，超过后会自动 checkpoint 并回收 | 默认 `100m` |
+| `SQLITE_WAL_AUTOCHECKPOINT` | SQLite 自动 checkpoint 的页数阈值，值越小越积极回收 WAL | 默认 `256` |
 | `STATS_QUERY_TIMEOUT` | `/api/v1/stats` 与 UI 统计查询超时 | `2s`、`3s` |
 | `INVALID_NODE_RETENTION` | `status=invalid` 且超过该时长未再出现的节点会在 cleanup 阶段删除 | 默认 `72h` |
 | `AUTO_FETCH_ENABLED` | 是否自动抓取 | `true` / `false` |
@@ -350,6 +351,12 @@ STATS_QUERY_TIMEOUT=3s
 
 ```bash
 SQLITE_WAL_SIZE_LIMIT=100m
+```
+
+同时也可以调小自动 checkpoint 触发阈值：
+
+```bash
+SQLITE_WAL_AUTOCHECKPOINT=256
 ```
 
 ### 失效老节点会保留多久？

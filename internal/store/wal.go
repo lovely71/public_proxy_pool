@@ -7,38 +7,72 @@ import (
 	"strconv"
 )
 
+type walCheckpointResult struct {
+	Busy         int64
+	LogFrames    int64
+	Checkpointed int64
+}
+
 func (s *Store) EnforceWALSizeLimit(ctx context.Context) error {
 	if s == nil || s.db == nil || s.sqlitePath == "" || s.walSizeLimitBytes <= 0 {
 		return nil
 	}
 
+	size, err := s.walSizeBytes()
+	if err != nil {
+		return err
+	}
+	if size <= s.walSizeLimitBytes {
+		return nil
+	}
+
+	if err := s.applyJournalSizeLimit(ctx); err != nil {
+		return err
+	}
+
+	if _, err := s.runWALCheckpoint(ctx, "PASSIVE"); err != nil {
+		return err
+	}
+	size, err = s.walSizeBytes()
+	if err != nil || size <= s.walSizeLimitBytes {
+		return err
+	}
+
+	if _, err := s.runWALCheckpoint(ctx, "RESTART"); err != nil {
+		return err
+	}
+	size, err = s.walSizeBytes()
+	if err != nil || size <= s.walSizeLimitBytes {
+		return err
+	}
+
+	if _, err := s.runWALCheckpoint(ctx, "TRUNCATE"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) walSizeBytes() (int64, error) {
 	info, err := os.Stat(s.sqlitePath + "-wal")
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil
+			return 0, nil
 		}
-		return err
+		return 0, err
 	}
-	if info.Size() <= s.walSizeLimitBytes {
-		return nil
-	}
+	return info.Size(), nil
+}
 
+func (s *Store) applyJournalSizeLimit(ctx context.Context) error {
 	var applied int64
-	if err := s.db.QueryRowContext(
+	return s.db.QueryRowContext(
 		ctx,
 		`PRAGMA journal_size_limit=`+strconv.FormatInt(s.walSizeLimitBytes, 10),
-	).Scan(&applied); err != nil {
-		return err
-	}
+	).Scan(&applied)
+}
 
-	var busy int64
-	if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, new(int64), new(int64)); err != nil {
-		return err
-	}
-	if busy > 0 {
-		// A busy reader may postpone truncation. The next maintenance tick will retry.
-		return nil
-	}
-
-	return nil
+func (s *Store) runWALCheckpoint(ctx context.Context, mode string) (walCheckpointResult, error) {
+	var out walCheckpointResult
+	err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(`+mode+`)`).Scan(&out.Busy, &out.LogFrames, &out.Checkpointed)
+	return out, err
 }

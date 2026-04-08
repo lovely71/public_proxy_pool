@@ -11,7 +11,7 @@ import (
 )
 
 func TestSQLiteDSN_AppendsPragmasForFileDB(t *testing.T) {
-	got := sqliteDSN("/tmp/proxypool.db", 15*time.Second, 100*1024*1024)
+	got := sqliteDSN("/tmp/proxypool.db", 15*time.Second, 100*1024*1024, 256)
 
 	for _, want := range []string{
 		"/tmp/proxypool.db?",
@@ -19,6 +19,7 @@ func TestSQLiteDSN_AppendsPragmasForFileDB(t *testing.T) {
 		"_pragma=foreign_keys%28ON%29",
 		"_pragma=journal_mode%28WAL%29",
 		"_pragma=journal_size_limit%28104857600%29",
+		"_pragma=wal_autocheckpoint%28256%29",
 		"_pragma=synchronous%28NORMAL%29",
 		"_pragma=temp_store%28MEMORY%29",
 	} {
@@ -42,6 +43,9 @@ func TestNormalizeOpenOptions_UsesSingleConnForMemoryDB(t *testing.T) {
 	}
 	if got.WALSizeLimitBytes != 0 {
 		t.Fatalf("memory db should disable wal size limits, got %d", got.WALSizeLimitBytes)
+	}
+	if got.WALAutoCheckpoint != 0 {
+		t.Fatalf("memory db should disable wal autocheckpoint, got %d", got.WALAutoCheckpoint)
 	}
 }
 
